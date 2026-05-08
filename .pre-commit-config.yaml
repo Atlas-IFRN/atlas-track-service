@@ -1,0 +1,40 @@
+exclude: '(^migrations/|/migrations/|static/|media/|venv/|env/|manage.*\.py|.*settings.*\.py|templates/|.*/templates/|.github|.vscode|/test/|/tests/|.*/test/|.*/tests/)'
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: debug-statements
+  - repo: https://github.com/PyCQA/autoflake
+    rev: v2.3.1
+    hooks:
+      - id: autoflake
+        args: [
+          '--in-place',
+          '--ignore-init-module-imports',
+          # '--expand-star-imports',
+          '--remove-all-unused-imports'
+          ]
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort (Python)
+        args: ["--profile", "black", "--line-length", "120", "--multi-line", "3", "--trailing-comma", "--use-parentheses", "--quiet"]
+  - repo: https://github.com/psf/black
+    rev: 24.4.2
+    hooks:
+      - id: black
+        args: ["--line-length", "120", "--skip-string-normalization", "--quiet"]
+        exclude: (.*urls.py)
+  - repo: local
+    hooks:
+      - id: django-check
+        name: Run Django Check
+        entry: python manage.py check
+        language: system
+        pass_filenames: false
+        always_run: true
