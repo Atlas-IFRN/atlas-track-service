@@ -1,8 +1,13 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.http import HttpResponse
+from django.urls import include, path
+
+
+def health_check(request):
+    return HttpResponse("OK", status=200)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    # Conectando a nossa rota apontando para a pasta apps:
+    path('health/', health_check),
     path('api/tracks/', include('apps.tracks.urls')),
 ]

@@ -1,4 +1,16 @@
-from .base import *
+"""
+Configurações de produção.
+"""
+from .base import * # noqa: F401,F403
+from .base import env
 
-# Em produção, NUNCA mostramos a tela amarela de erro do Django para o usuário
 DEBUG = False
+SECRET_KEY = env("DJANGO_SECRET_KEY")
+ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS")
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
