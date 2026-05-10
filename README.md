@@ -120,3 +120,4 @@ docker compose exec web python manage.py check
 
 ---
 
+![DER Inicial](docs/der-inicial-tracks.png)
