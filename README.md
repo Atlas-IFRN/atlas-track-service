@@ -21,7 +21,7 @@ Siga os passos abaixo para rodar o serviço localmente usando Docker Compose.
 1. Clone o repositório:
 
 ```bash
-git clone <URL_DO_REPOSITORIO>
+git clone https://github.com/Atlas-IFRN/atlas-track-service.git
 cd Atlas_Track-Services
 ```
 
@@ -70,15 +70,23 @@ Essa separação facilita reuso, testes e integração com outros serviços do e
 
 ## 3) Documentação da API 📚
 
-### Autenticação
+### 🔒 Autenticação e Endpoints
 
-Todos os endpoints exigem autenticação via **SimpleJWT**. Inclua o token no header de todas as requisições:
+A API é protegida e exige o header `Authorization: Bearer <token_jwt>` em todas as requisições. Os tokens são gerenciados pelo serviço de autenticação central do ecossistema Atlas.
 
 ```http
-Authorization: Bearer <seu_token>
+Authorization: Bearer <token_jwt>
 ```
 
-### Trilhas (`/api/tracks/`)
+A base das URLs de exemplo é:
+
+```http
+http://localhost:8000/api/
+```
+
+### Endpoints principais
+
+#### Trilhas (`/api/tracks/`)
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
@@ -89,28 +97,55 @@ Authorization: Bearer <seu_token>
 | `PATCH` | `/api/tracks/{id}/` | Atualiza dados parciais da trilha |
 | `DELETE` | `/api/tracks/{id}/` | Deleta uma trilha |
 
-### Inscrições de Usuários (`/api/user-tracks/`)
+#### Inscrições de Usuários (`/api/user-tracks/`)
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
 | `GET` | `/api/user-tracks/` | Lista as inscrições dos alunos |
 | `POST` | `/api/user-tracks/` | Inscreve um aluno em uma trilha |
 
-#### Exemplo de Requisição (POST `/api/user-tracks/`)
+### Exemplos cURL
 
-```json
-{
-  "suap_user_id": "123e4567-e89b-12d3-a456-426614174000",
-  "track": "uuid-da-trilha",
-  "status": "IN_PROGRESS"
-}
+#### Criar uma Trilha
+
+```bash
+curl -X POST http://localhost:8000/api/tracks/ \
+  -H "Authorization: Bearer <token_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "creator_id": "123e4567-e89b-12d3-a456-426614174000",
+    "title": "Introdução a DevOps",
+    "description": "Trilha para aprendizado de práticas essenciais de DevOps.",
+    "status": "DRAFT"
+  }'
 ```
 
-#### Regras de Negócio
+#### Inscrição de Aluno
 
-- A inscrição será rejeitada com status **400 (Bad Request)** se a trilha solicitada não possuir o status `PUBLISHED`.
-- O `suap_user_id` deve ser um UUID válido.
-- O `status` deve ser um dos valores permitidos pelo modelo.
+```bash
+curl -X POST http://localhost:8000/api/user-tracks/ \
+  -H "Authorization: Bearer <token_jwt>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "123e4567-e89b-12d3-a456-426614174000",
+    "track": "987e6543-e21b-12d3-a456-426614174000"
+  }'
+```
+
+> Nota: a trilha deve estar com `status` igual a `PUBLISHED` para que a inscrição seja aceita.
+
+#### Listagem de Trilhas
+
+```bash
+curl -X GET http://localhost:8000/api/tracks/ \
+  -H "Authorization: Bearer <token_jwt>"
+```
+
+### Regras de Negócio de Segurança
+
+- Inscrições em trilhas com status diferente de `PUBLISHED` são bloqueadas.
+- Inscrições duplicadas para o mesmo usuário na mesma trilha são impedidas pela lógica de domínio.
+- Todas as requisições dependem do `Authorization: Bearer <token_jwt>` e serão rejeitadas se o token estiver ausente ou inválido.
 
 ## 4) Qualidade de código (pre-commit) ✅
 
