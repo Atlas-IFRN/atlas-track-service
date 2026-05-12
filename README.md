@@ -68,7 +68,51 @@ Este repositório segue uma arquitetura com separação clara entre configuraç�
 
 Essa separação facilita reuso, testes e integração com outros serviços do ecossistema Atlas.
 
-## 3) Qualidade de código (pre-commit) ✅
+## 3) Documentação da API 📚
+
+### Autenticação
+
+Todos os endpoints exigem autenticação via **SimpleJWT**. Inclua o token no header de todas as requisições:
+
+```http
+Authorization: Bearer <seu_token>
+```
+
+### Trilhas (`/api/tracks/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/tracks/` | Lista todas as trilhas cadastradas |
+| `POST` | `/api/tracks/` | Cria uma nova trilha |
+| `GET` | `/api/tracks/{id}/` | Retorna detalhes de uma trilha específica |
+| `PUT` | `/api/tracks/{id}/` | Atualiza todos os dados da trilha |
+| `PATCH` | `/api/tracks/{id}/` | Atualiza dados parciais da trilha |
+| `DELETE` | `/api/tracks/{id}/` | Deleta uma trilha |
+
+### Inscrições de Usuários (`/api/user-tracks/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/user-tracks/` | Lista as inscrições dos alunos |
+| `POST` | `/api/user-tracks/` | Inscreve um aluno em uma trilha |
+
+#### Exemplo de Requisição (POST `/api/user-tracks/`)
+
+```json
+{
+  "suap_user_id": "123e4567-e89b-12d3-a456-426614174000",
+  "track": "uuid-da-trilha",
+  "status": "IN_PROGRESS"
+}
+```
+
+#### Regras de Negócio
+
+- A inscrição será rejeitada com status **400 (Bad Request)** se a trilha solicitada não possuir o status `PUBLISHED`.
+- O `suap_user_id` deve ser um UUID válido.
+- O `status` deve ser um dos valores permitidos pelo modelo.
+
+## 4) Qualidade de código (pre-commit) ✅
 
 Recomendamos usar `pre-commit` para garantir formatação e limpeza automáticas antes dos commits (Black, Isort, Autoflake, entre outros hooks configurados).
 
@@ -87,7 +131,7 @@ pre-commit run --all-files
 
 O arquivo `.pre-commit-config.yaml` já inclui hooks para `black`, `isort`, `autoflake` e verificações básicas de YAML/JSON e debug-statements.
 
-## 4) Comandos úteis (rotina de desenvolvimento) 🧰
+## 5) Comandos úteis (rotina de desenvolvimento) 🧰
 
 ```bash
 # Subir containers (modo interativo)

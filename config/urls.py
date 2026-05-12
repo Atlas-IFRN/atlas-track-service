@@ -9,5 +9,7 @@ def health_check(request):
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('health/', health_check),
-    path('api/tracks/', include('apps.tracks.urls')),
+
+    # Tudo que chegar com /api/ vai ser mandado para o nosso app tracks
+    path('api/', include('apps.tracks.urls')),
 ]
