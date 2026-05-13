@@ -84,6 +84,15 @@ A base das URLs de exemplo é:
 http://localhost:8000/api/
 ```
 
+### Documentação interativa (Swagger)
+
+A documentação interativa dos endpoints é gerada automaticamente pelo `drf-spectacular`. Nela, você encontra detalhes de requisição, exemplos de dados de entrada e saída, além dos possíveis erros retornados pelas rotas do serviço de trilhas.
+
+Para acessar a documentação, certifique-se de que o container web do projeto está em execução e abra os links abaixo no navegador:
+
+- **Swagger UI:** [http://localhost:8000/api/docs/](http://localhost:8000/api/docs/)
+- **JSON Schema:** [http://localhost:8000/api/schema/](http://localhost:8000/api/schema/)
+
 ### Endpoints principais
 
 #### Trilhas (`/api/tracks/`)
