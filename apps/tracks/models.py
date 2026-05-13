@@ -1,5 +1,6 @@
 import uuid
 
+from django.core.exceptions import ValidationError
 from django.db import models
 
 # Create your models here.
@@ -33,7 +34,7 @@ class Module(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['display_order', 'created_at']  
+        ordering = ['display_order', 'created_at']
 
     def __str__(self):
         return f"{self.track.title} - Módulo {self.display_order}: {self.title}"
@@ -80,11 +81,30 @@ class UserTrack(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [ models.UniqueConstraint(fields=['user_id', 'track'], name='unique_user_track_enrollment')
-        ]
+        constraints = [models.UniqueConstraint(fields=['user_id', 'track'], name='unique_user_track_enrollment')]
 
     def __str__(self):
         return f"Inscrição: {self.user_id} -> {self.track.title}"
+
+    def clean(self):
+        super().clean()
+
+        if self._state.adding:
+            if self.track and self.track.status != 'PUBLISHED':
+                raise ValidationError({"track": "Inscrição bloqueada. A trilha deve estar no status PUBLISHED."})
+
+            existing_enrollment = UserTrack.objects.filter(
+                user_id=self.user_id, track=self.track, status__in=['IN_PROGRESS', 'COMPLETED']
+            ).exists()
+
+            if existing_enrollment:
+                raise ValidationError(
+                    {"user_id": "Este usuário já possui uma inscrição ativa ou concluída nesta trilha."}
+                )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class UserModuleProgress(models.Model):
@@ -102,9 +122,8 @@ class UserModuleProgress(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=['user_track', 'module'], name='unique_user_module_progress')
-        ]
+        constraints = [models.UniqueConstraint(fields=['user_track', 'module'], name='unique_user_module_progress')]
+
 
 class UserContentProgress(models.Model):
     STATUS_CHOICES = [
@@ -119,10 +138,7 @@ class UserContentProgress(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        constraints = [
-            models.UniqueConstraint(fields=['user_track', 'content'], name='unique_user_content_progress')
-        ]
-
+        constraints = [models.UniqueConstraint(fields=['user_track', 'content'], name='unique_user_content_progress')]
 
 
 class ChallengeSubmission(models.Model):
@@ -131,12 +147,13 @@ class ChallengeSubmission(models.Model):
         ('EVALUATING', 'Em Avaliação'),
         ('EVALUATED', 'Avaliado'),
         ('FAILED', 'Falha na Avaliação'),
-
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_track = models.ForeignKey(UserTrack, on_delete=models.CASCADE, related_name='submissions')
-    challenge = models.ForeignKey(Content, on_delete=models.CASCADE, help_text="Deve apontar para um Content do tipo CHALLENGE")
+    challenge = models.ForeignKey(
+        Content, on_delete=models.CASCADE, help_text="Deve apontar para um Content do tipo CHALLENGE"
+    )
     github_url = models.URLField(help_text="URL enviada pelo aluno")
     ai_status = models.CharField(max_length=20, choices=AI_STATUS_CHOICES, default='PENDING_AI')
     ai_feedback = models.TextField(null=True, blank=True, help_text="Feedback assíncrono consumido da fila")
