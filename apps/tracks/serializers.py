@@ -9,6 +9,22 @@ class ContentSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
+class ModuleListSerializer(serializers.ModelSerializer):
+    contents_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Module
+        fields = ['id', 'title', 'description', 'display_order', 'contents_count', 'created_at']
+
+
+class TrackListSerializer(serializers.ModelSerializer):
+    modules_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Track
+        fields = ['id', 'title', 'description', 'status', 'modules_count', 'created_at', 'updated_at']
+
+
 class ModuleSerializer(serializers.ModelSerializer):
     contents = ContentSerializer(many=True, read_only=True)
 
