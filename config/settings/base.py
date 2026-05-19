@@ -21,11 +21,10 @@ environ.Env.read_env(os.path.join(BASE_DIR, ".env"))
 # ------------------------------------------------------------------------------
 # CORE
 # ------------------------------------------------------------------------------
-SECRET_KEY = env(
-    "DJANGO_SECRET_KEY", 
-    default="django-insecure-p6^ped7h!8lxdm0f7pw%u0p!$h--b6lpi7aae5eli4(g)a+u@6"
+SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-p6^ped7h!8lxdm0f7pw%u0p!$h--b6lpi7aae5eli4(g)a+u@6"
 )
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
+
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 # ==============================================================================

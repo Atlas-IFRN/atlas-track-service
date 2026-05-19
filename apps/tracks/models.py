@@ -21,6 +21,30 @@ class Track(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def clean(self):
+        super().clean()
+        # Regra 2: Trilha Fantasma
+        if self.status == 'PUBLISHED':
+            if not self.pk or self.modules.count() == 0:
+                raise ValidationError({"status": "Uma trilha não pode ser publicada sem ter pelo menos um módulo."})
+
+    # CORREÇÃO 1: Voltou um nível de indentação
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    # CORREÇÃO 1: Voltou um nível de indentação
+    def delete(self, *args, **kwargs):
+        # REGRA 3: Tapete Puxado
+        has_active_students = self.enrollments.filter(status='IN_PROGRESS').exists()
+        if has_active_students:
+            raise ValidationError(
+                "Não é possível apagar uma trilha com alunos em andamento. Mude o status para ARCHIVED."
+            )
+
+        # CORREÇÃO 2: Chamando o super().delete() no final, e não save()
+        super().delete(*args, **kwargs)
+
     def __str__(self):
         return self.title
 
@@ -124,6 +148,31 @@ class UserModuleProgress(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user_track', 'module'], name='unique_user_module_progress')]
 
+    def clean(self):
+        super().clean()
+        # Regra 1: Anti-Pulo (Módulos)
+        if self.status in ['IN_PROGRESS', 'COMPLETED']:
+            # Busca o módulo anterior desta mesma trilha baseado na ordem (display_order)
+            previous_module = (
+                Module.objects.filter(track=self.module.track, display_order__lt=self.module.display_order)
+                .order_by('-display_order')
+                .first()
+            )
+
+            if previous_module:
+                prev_progress = UserModuleProgress.objects.filter(
+                    user_track=self.user_track, module=previous_module, status='COMPLETED'
+                ).exists()
+
+                if not prev_progress:
+                    raise ValidationError(
+                        {"status": f"Você precisa concluir o módulo '{previous_module.title}' antes de iniciar este."}
+                    )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class UserContentProgress(models.Model):
     STATUS_CHOICES = [
@@ -139,6 +188,31 @@ class UserContentProgress(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user_track', 'content'], name='unique_user_content_progress')]
+
+    def clean(self):
+        super().clean()
+        # Regra 1: Anti-Pulo (Conteúdos)
+        if self.status == 'COMPLETED':
+            # Busca o conteúdo anterior do mesmo módulo
+            previous_content = (
+                Content.objects.filter(module=self.content.module, display_order__lt=self.content.display_order)
+                .order_by('-display_order')
+                .first()
+            )
+
+            if previous_content:
+                prev_progress = UserContentProgress.objects.filter(
+                    user_track=self.user_track, content=previous_content, status='COMPLETED'
+                ).exists()
+
+                if not prev_progress:
+                    raise ValidationError(
+                        {"status": "Você precisa concluir o conteúdo anterior antes de avançar para este."}
+                    )
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class ChallengeSubmission(models.Model):

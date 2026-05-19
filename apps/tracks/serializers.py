@@ -58,6 +58,32 @@ class UserTrackSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['enrolled_at', 'completed_at']
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+
+        # Apenas executa se tiver um request com Auth (evita quebrar no painel Admin ou testes soltos)
+        if request and request.auth:
+            user_id = request.auth.get('user_id')
+            user_role = request.auth.get('role')
+
+            # PERMISSÃO: Professor não pode se matricular
+            if user_role == 'TEACHER':
+                raise serializers.ValidationError({"detail": "Professores não podem se matricular em trilhas."})
+
+            # REGRA 4: Limite de Matrículas
+            # Só fazemos essa checagem se for uma criação nova de matrícula
+            if not self.instance:
+                active_enrollments = UserTrack.objects.filter(user_id=user_id, status='IN_PROGRESS').count()
+
+                if active_enrollments >= 3:
+                    raise serializers.ValidationError(
+                        {
+                            "detail": "Você atingiu o limite de 3 trilhas em andamento. Conclua ou abandone uma para iniciar outra."
+                        }
+                    )
+
+        return attrs
+
 
 class ChallengeSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
