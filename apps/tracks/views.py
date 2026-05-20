@@ -2,7 +2,7 @@ from django.db.models import Count
 from rest_framework import viewsets
 
 from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
-from .permissions import IsTeacherOrReadOnly
+from .permissions import IsAuthenticatedViaRPC, IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
     ContentSerializer,
@@ -17,7 +17,7 @@ from .serializers import (
 
 
 class TrackViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsTeacherOrReadOnly]
+    permission_classes = [IsTeacherOrReadOnly, IsAuthenticatedViaRPC]
 
     def get_queryset(self):
         return Track.objects.annotate(modules_count=Count('modules')).all()
@@ -31,7 +31,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
 
 class ModuleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsTeacherOrReadOnly]
+    permission_classes = [IsTeacherOrReadOnly, IsAuthenticatedViaRPC]
 
     def get_queryset(self):
         # Conta os conteúdos de cada módulo
@@ -51,7 +51,7 @@ class ModuleViewSet(viewsets.ModelViewSet):
 
 class ContentViewSet(viewsets.ModelViewSet):
     serializer_class = ContentSerializer
-    permission_classes = [IsTeacherOrReadOnly]
+    permission_classes = [IsTeacherOrReadOnly, IsAuthenticatedViaRPC]
 
     def get_queryset(self):
         queryset = Content.objects.all()
@@ -64,16 +64,11 @@ class ContentViewSet(viewsets.ModelViewSet):
 
 
 class UserTrackViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticatedViaRPC]
     serializer_class = UserTrackSerializer
 
     def get_queryset(self):
-        """
-        Garante que o aluno só veja as próprias trilhas, a menos que uma busca
-        específica (user_uuid) seja passada e permitida.
-        """
-        # Pega o UUID específico passado na URL: /api/user-tracks/?user_uuid=XYZ
         target_user_uuid = self.request.query_params.get('user_uuid')
-
         if target_user_uuid:
             return UserTrack.objects.filter(user_id=target_user_uuid)
 
@@ -85,15 +80,18 @@ class UserTrackViewSet(viewsets.ModelViewSet):
 
 
 class UserModuleProgressViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticatedViaRPC]
     queryset = UserModuleProgress.objects.all()
     serializer_class = UserModuleProgressSerializer
 
 
 class UserContentProgressViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticatedViaRPC]
     queryset = UserContentProgress.objects.all()
     serializer_class = UserContentProgressSerializer
 
 
 class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticatedViaRPC]
     queryset = ChallengeSubmission.objects.all()
     serializer_class = ChallengeSubmissionSerializer
