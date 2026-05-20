@@ -106,4 +106,11 @@ class ChallengeSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChallengeSubmission
         fields = '__all__'
-        read_only_fields = ['ai_status', 'ai_feedback', 'ai_score', 'submitted_at', 'evaluated_at']
+        read_only_fields = [
+            'ai_status',
+            'ai_feedback',
+            'ai_score',
+            'ai_criteries',
+            'submitted_at',
+            'evaluated_at',
+        ]

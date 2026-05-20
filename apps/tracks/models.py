@@ -77,6 +77,17 @@ class Content(models.Model):
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
     content_url = models.URLField(null=True, blank=True, help_text="URL para VIDEO, ARTICLE ou REPOSITORY")
     instructions = models.TextField(null=True, blank=True, help_text="Enunciado quando for um CHALLENGE")
+    language = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Stack/linguagem esperada quando for CHALLENGE (ex.: python, javascript)",
+    )
+    evaluation_criteria = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Critérios de avaliação para CHALLENGE no formato {label: peso}",
+    )
     duration_minutes = models.IntegerField(null=True, blank=True, help_text="Estimativa em minutos")
     display_order = models.IntegerField(help_text="Ordem do conteúdo dentro do módulo", default=1)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -229,6 +240,11 @@ class ChallengeSubmission(models.Model):
     ai_status = models.CharField(max_length=20, choices=AI_STATUS_CHOICES, default='PENDING_AI')
     ai_feedback = models.TextField(null=True, blank=True, help_text="Feedback assíncrono consumido da fila")
     ai_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    ai_criteries = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Resultado dos critérios avaliados pela IA (lista de checks com id/label/present/evidence/weight)",
+    )
     submitted_at = models.DateTimeField(auto_now_add=True)
     evaluated_at = models.DateTimeField(null=True, blank=True, help_text="Preenchido pelo worker da IA ao finalizar")
 

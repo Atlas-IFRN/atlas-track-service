@@ -119,3 +119,25 @@ SPECTACULAR_SETTINGS = {
 }
 
 AUTH_GRPC_URL = env('AUTH_GRPC_URL', default='auth-service:50051')
+
+# ==============================================================================
+# CELERY (RabbitMQ broker)
+# ==============================================================================
+CELERY_BROKER_URL = env(
+    'CELERY_BROKER_URL',
+    default='amqp://guest:guest@rabbitmq:5672//',
+)
+CELERY_RESULT_BACKEND = env('CELERY_RESULT_BACKEND', default='rpc://')
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_TASK_TRACK_STARTED = True
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+# ==============================================================================
+# AI SERVICE
+# ==============================================================================
+AI_SERVICE_URL = env('AI_SERVICE_URL', default='http://ai-service:8003')
+AI_SERVICE_TIMEOUT = env.int('AI_SERVICE_TIMEOUT', default=900)

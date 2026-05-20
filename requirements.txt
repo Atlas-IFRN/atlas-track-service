@@ -6,3 +6,6 @@ grpcio-tools>=1.60.0
 django-environ==0.13.0
 djangorestframework-simplejwt==5.3.1
 drf-spectacular==0.27.2
+celery>=5.3,<6.0
+kombu>=5.3,<6.0
+requests>=2.31.0

@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.db.models import Count
 from rest_framework import viewsets
 
@@ -14,6 +15,7 @@ from .serializers import (
     UserModuleProgressSerializer,
     UserTrackSerializer,
 )
+from .tasks import evaluate_challenge_submission
 
 
 class TrackViewSet(viewsets.ModelViewSet):
@@ -105,3 +107,9 @@ class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC]
     queryset = ChallengeSubmission.objects.all()
     serializer_class = ChallengeSubmissionSerializer
+
+    def perform_create(self, serializer):
+        submission = serializer.save(ai_status='PENDING_AI')
+        transaction.on_commit(
+            lambda: evaluate_challenge_submission.delay(str(submission.pk))
+        )

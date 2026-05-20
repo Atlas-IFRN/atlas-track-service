@@ -16,11 +16,33 @@ services:
     networks:
       - internal
 
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: track-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-guest}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - internal
+      - atlas-network
+
   web:
     build: .
     container_name: track-service
     depends_on:
       db:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
     ports:
       - "8001:8000"
@@ -32,8 +54,27 @@ services:
       - internal
       - atlas-network
 
+  celery_worker:
+    build: .
+    command: celery -A config worker -l info --concurrency=2
+    deploy:
+      replicas: 2
+    depends_on:
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+    networks:
+      - internal
+      - atlas-network
+
 volumes:
   postgres_data:
+  rabbitmq_data:
 
 networks:
   internal:
