@@ -22,7 +22,8 @@ class TrackListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Track
-        fields = ['id', 'title', 'description', 'status', 'modules_count', 'created_at', 'updated_at']
+        fields = '__all__'
+        read_only_fields = ['creator_id', 'created_at', 'updated_at']
 
 
 class ModuleSerializer(serializers.ModelSerializer):
@@ -72,7 +73,7 @@ class UserTrackSerializer(serializers.ModelSerializer):
             'module_progress',
             'content_progress',
         ]
-        read_only_fields = ['enrolled_at', 'completed_at']
+        read_only_fields = ['user_id', 'enrolled_at', 'completed_at']
 
     def validate(self, attrs):
         request = self.context.get('request')
