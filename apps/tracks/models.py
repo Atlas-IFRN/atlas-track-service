@@ -40,7 +40,6 @@ class Track(models.Model):
                 "Não é possível apagar uma trilha com alunos em andamento. Mude o status para ARCHIVED."
             )
 
-        # CORREÇÃO 2: Chamando o super().delete() no final, e não save()
         super().delete(*args, **kwargs)
 
     def __str__(self):

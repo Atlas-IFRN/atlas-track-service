@@ -16,15 +16,7 @@ from .serializers import (
 )
 
 
-class BaseProtectedViewSet(viewsets.ModelViewSet):
-    """
-    Classe base que garante que todos os ViewSets herdem a proteção do SimpleJWT.
-    Rejeita qualquer requisição sem o header 'Authorization: Bearer <token>'
-    """
-    pass
-
-
-class TrackViewSet(BaseProtectedViewSet):
+class TrackViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTeacherOrReadOnly]
 
     def get_queryset(self):
@@ -38,7 +30,7 @@ class TrackViewSet(BaseProtectedViewSet):
         return TrackSerializer
 
 
-class ModuleViewSet(BaseProtectedViewSet):
+class ModuleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTeacherOrReadOnly]
 
     def get_queryset(self):
@@ -57,7 +49,7 @@ class ModuleViewSet(BaseProtectedViewSet):
         return ModuleSerializer
 
 
-class ContentViewSet(BaseProtectedViewSet):
+class ContentViewSet(viewsets.ModelViewSet):
     serializer_class = ContentSerializer
     permission_classes = [IsTeacherOrReadOnly]
 
@@ -71,7 +63,7 @@ class ContentViewSet(BaseProtectedViewSet):
         return queryset
 
 
-class UserTrackViewSet(BaseProtectedViewSet):
+class UserTrackViewSet(viewsets.ModelViewSet):
     serializer_class = UserTrackSerializer
 
     def get_queryset(self):
@@ -92,16 +84,16 @@ class UserTrackViewSet(BaseProtectedViewSet):
         return UserTrack.objects.none()
 
 
-class UserModuleProgressViewSet(BaseProtectedViewSet):
+class UserModuleProgressViewSet(viewsets.ModelViewSet):
     queryset = UserModuleProgress.objects.all()
     serializer_class = UserModuleProgressSerializer
 
 
-class UserContentProgressViewSet(BaseProtectedViewSet):
+class UserContentProgressViewSet(viewsets.ModelViewSet):
     queryset = UserContentProgress.objects.all()
     serializer_class = UserContentProgressSerializer
 
 
-class ChallengeSubmissionViewSet(BaseProtectedViewSet):
+class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
     queryset = ChallengeSubmission.objects.all()
     serializer_class = ChallengeSubmissionSerializer
