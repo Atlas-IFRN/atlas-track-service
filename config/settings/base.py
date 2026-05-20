@@ -110,4 +110,12 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
-AUTH_GRPC_URL = env('AUTH_GRPC_URL', default='host.docker.internal:50051')
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Track Service API',
+    'DESCRIPTION': 'Microsserviço responsável pela gestão de trilhas, módulos, conteúdos e progresso dos alunos.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+    'COMPONENT_SPLIT_REQUEST': True,
+}
+
+AUTH_GRPC_URL = env('AUTH_GRPC_URL', default='auth-service:50051')
