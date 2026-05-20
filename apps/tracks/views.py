@@ -2,6 +2,7 @@ from django.db.models import Count
 from rest_framework import viewsets
 
 from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .permissions import IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
     ContentSerializer,
@@ -20,12 +21,11 @@ class BaseProtectedViewSet(viewsets.ModelViewSet):
     Classe base que garante que todos os ViewSets herdem a proteção do SimpleJWT.
     Rejeita qualquer requisição sem o header 'Authorization: Bearer <token>'
     """
-
-    # permission_classes = [IsAuthenticated]
+    pass
 
 
 class TrackViewSet(BaseProtectedViewSet):
-    # permission_classes = [IsTeacherOrReadOnly]
+    permission_classes = [IsTeacherOrReadOnly]
 
     def get_queryset(self):
         return Track.objects.annotate(modules_count=Count('modules')).all()
@@ -39,7 +39,7 @@ class TrackViewSet(BaseProtectedViewSet):
 
 
 class ModuleViewSet(BaseProtectedViewSet):
-    # permission_classes = [IsTeacherOrReadOnly]
+    permission_classes = [IsTeacherOrReadOnly]
 
     def get_queryset(self):
         # Conta os conteúdos de cada módulo
@@ -58,8 +58,8 @@ class ModuleViewSet(BaseProtectedViewSet):
 
 
 class ContentViewSet(BaseProtectedViewSet):
-    # permission_classes = [IsTeacherOrReadOnly]
     serializer_class = ContentSerializer
+    permission_classes = [IsTeacherOrReadOnly]
 
     def get_queryset(self):
         queryset = Content.objects.all()

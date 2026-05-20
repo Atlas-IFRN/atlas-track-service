@@ -78,6 +78,15 @@ A API é protegida e exige o header `Authorization: Bearer <token_jwt>` em todas
 Authorization: Bearer <token_jwt>
 ```
 
+#### Permissões baseadas em role no JWT
+
+A política de acesso utiliza a permissão customizada `IsTeacherOrReadOnly`, que lê a role diretamente do payload do JWT recebido pela requisição.
+
+- `TEACHER`: pode executar escrita completa nos recursos protegidos por essa permissão, incluindo `POST`, `PUT`, `PATCH` e `DELETE` em trilhas, módulos e conteúdos.
+- `STUDENT`: mantém acesso de leitura aos recursos públicos da API e pode realizar matrícula em trilhas publicadas, desde que respeite as validações de negócio aplicadas no domínio.
+
+Na prática, a autorização de escrita para a trilha de aprendizado é centralizada nessa permissão, enquanto as regras específicas de matrícula são complementadas pelas validações do serializer e dos models.
+
 A base das URLs de exemplo é:
 
 ```http
@@ -99,12 +108,26 @@ Para acessar a documentação, certifique-se de que o container web do projeto e
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| `GET` | `/api/tracks/` | Lista todas as trilhas cadastradas |
+| `GET` | `/api/tracks/` | Lista todas as trilhas cadastradas com serializer raso e `modules_count` agregado via `.annotate()` |
 | `POST` | `/api/tracks/` | Cria uma nova trilha |
-| `GET` | `/api/tracks/{id}/` | Retorna detalhes de uma trilha específica |
+| `GET` | `/api/tracks/{id}/` | Retorna detalhes completos de uma trilha específica com árvore aninhada de módulos e conteúdos |
 | `PUT` | `/api/tracks/{id}/` | Atualiza todos os dados da trilha |
 | `PATCH` | `/api/tracks/{id}/` | Atualiza dados parciais da trilha |
 | `DELETE` | `/api/tracks/{id}/` | Deleta uma trilha |
+
+#### Módulos (`/api/modules/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/modules/?track_id=UUID` | Filtra e lista apenas os módulos vinculados a uma trilha específica, com serializer raso e `contents_count` agregado via `.annotate()` |
+| `GET` | `/api/modules/{id}/` | Retorna o módulo com todos os conteúdos aninhados |
+
+#### Conteúdos (`/api/contents/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/contents/?module_id=UUID` | Filtra e lista apenas os conteúdos vinculados a um módulo específico |
+| `GET` | `/api/contents/{id}/` | Retorna o conteúdo individual |
 
 #### Inscrições de Usuários (`/api/user-tracks/`)
 
@@ -112,6 +135,15 @@ Para acessar a documentação, certifique-se de que o container web do projeto e
 |--------|----------|-----------|
 | `GET` | `/api/user-tracks/` | Lista as inscrições dos alunos |
 | `POST` | `/api/user-tracks/` | Inscreve um aluno em uma trilha |
+
+#### Arquitetura de serializers: shallow vs deep
+
+A API adota uma estratégia dupla de serialização para equilibrar custo de consulta e profundidade do payload:
+
+- Listagens gerais usam serializers rasos: `TrackListSerializer` e `ModuleListSerializer`.
+- Nesses endpoints, os totais são agregados previamente com `.annotate()`, evitando consultas adicionais para contar módulos e conteúdos.
+- Consultas por ID usam serializers profundos: `TrackSerializer` retorna a trilha com `modules`, e `ModuleSerializer` retorna o módulo com `contents`.
+- Essa divisão mantém as listagens leves e previsíveis, sem abrir mão da árvore completa quando o cliente realmente precisa do detalhe.
 
 ### Exemplos cURL
 
@@ -154,7 +186,27 @@ curl -X GET http://localhost:8000/api/tracks/ \
 
 - Inscrições em trilhas com status diferente de `PUBLISHED` são bloqueadas.
 - Inscrições duplicadas para o mesmo usuário na mesma trilha são impedidas pela lógica de domínio.
+- Professores não podem se matricular em trilhas; essa regra é validada pela role `TEACHER` no JWT.
+- Cada aluno pode manter no máximo 3 trilhas em andamento simultaneamente.
+- Uma trilha não pode ser publicada com status `PUBLISHED` se ainda não possuir nenhum módulo.
+- A exclusão de uma trilha é bloqueada enquanto existirem matrículas ativas em andamento (`IN_PROGRESS`) associadas a ela.
 - Todas as requisições dependem do `Authorization: Bearer <token_jwt>` e serão rejeitadas se o token estiver ausente ou inválido.
+
+### Testes automatizados
+
+As permissões e regras de negócio descritas acima são cobertas por uma suíte de testes unitários em `apps/tracks/tests.py`, construída com `APITestCase` e `force_authenticate` do Django REST Framework para simular tokens JWT com diferentes roles.
+
+Para executar os testes do serviço:
+
+```bash
+docker compose exec web python manage.py test
+```
+
+Se quiser focar apenas na aplicação de trilhas:
+
+```bash
+docker compose exec web python manage.py test apps.tracks
+```
 
 ## 4) Qualidade de código (pre-commit) ✅
 
