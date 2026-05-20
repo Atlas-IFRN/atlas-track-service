@@ -5,7 +5,7 @@ from .grpc_client import validate_token
 
 class IsAuthenticatedViaRPC(BasePermission):
     """
-    Liga pro gRPC. Se o token for verdadeiro, deixa passar e salva os dados no request.auth.
+    Liga pro gRPC. Se o token for verdadeiro, deixa passar e salva os dados em request.auth.
     Se for falso/inválido, bloqueia na hora (Retorna 401 Unauthorized).
     """
 
@@ -14,13 +14,13 @@ class IsAuthenticatedViaRPC(BasePermission):
         if not auth_header.startswith("Bearer "):
             return False
 
-        token_bruto = auth_header.split(" ")[1]
-        payload_usuario = validate_token(token_bruto)
+        token = auth_header.split(" ")[1]
+        payload = validate_token(token)
 
-        if not payload_usuario:
+        if not payload:
             return False
 
-        request.auth = payload_usuario
+        request.auth = payload
         return True
 
 
@@ -30,7 +30,6 @@ class IsTeacherOrReadOnly(BasePermission):
     """
 
     def has_permission(self, request, view):
-        # Se for método de leitura (GET, HEAD, OPTIONS), libera.
         if request.method in SAFE_METHODS:
             return True
 
