@@ -29,6 +29,11 @@ class TrackViewSet(viewsets.ModelViewSet):
         # GET /api/tracks/{id}/ -> Usa o detalhado (com os módulos aninhados)
         return TrackSerializer
 
+    def perform_create(self, serializer):
+        # Pega o UUID do professor que o gRPC validou e salva como criador da trilha
+        logged_user_id = self.request.auth.get('user_id')
+        serializer.save(creator_id=logged_user_id)
+
 
 class ModuleViewSet(viewsets.ModelViewSet):
     permission_classes = [IsTeacherOrReadOnly, IsAuthenticatedViaRPC]
@@ -77,6 +82,11 @@ class UserTrackViewSet(viewsets.ModelViewSet):
             return UserTrack.objects.filter(user_id=logged_user_id)
 
         return UserTrack.objects.none()
+
+    def perform_create(self, serializer):
+        # Pega o UUID do aluno direto do gRPC e amarra na matrícula
+        logged_user_id = self.request.auth.get('user_id')
+        serializer.save(user_id=logged_user_id)
 
 
 class UserModuleProgressViewSet(viewsets.ModelViewSet):
