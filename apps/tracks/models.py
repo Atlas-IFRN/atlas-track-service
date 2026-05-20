@@ -28,12 +28,10 @@ class Track(models.Model):
             if not self.pk or self.modules.count() == 0:
                 raise ValidationError({"status": "Uma trilha não pode ser publicada sem ter pelo menos um módulo."})
 
-    # CORREÇÃO 1: Voltou um nível de indentação
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
-    # CORREÇÃO 1: Voltou um nível de indentação
     def delete(self, *args, **kwargs):
         # REGRA 3: Tapete Puxado
         has_active_students = self.enrollments.filter(status='IN_PROGRESS').exists()
@@ -152,7 +150,6 @@ class UserModuleProgress(models.Model):
         super().clean()
         # Regra 1: Anti-Pulo (Módulos)
         if self.status in ['IN_PROGRESS', 'COMPLETED']:
-            # Busca o módulo anterior desta mesma trilha baseado na ordem (display_order)
             previous_module = (
                 Module.objects.filter(track=self.module.track, display_order__lt=self.module.display_order)
                 .order_by('-display_order')
