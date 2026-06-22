@@ -1,9 +1,10 @@
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
-from rest_framework import viewsets
+from rest_framework import filters, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
 from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
@@ -29,11 +30,31 @@ def _ensure_track_owner(track: Track, request) -> None:
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
 
 
+class TrackPagination(PageNumberPagination):
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+
+
 class TrackViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
+    pagination_class = TrackPagination
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['title', 'created_at']
+    ordering = ['-created_at']
 
     def get_queryset(self):
-        return Track.objects.annotate(modules_count=Count('modules')).all()
+        queryset = Track.objects.annotate(modules_count=Count('modules')).all()
+        auth_payload = getattr(self.request, 'auth', None) or {}
+
+        if auth_payload.get('role') != 'TEACHER':
+            queryset = queryset.filter(status='PUBLISHED')
+
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == 'list':
