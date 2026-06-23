@@ -1,7 +1,7 @@
 from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
-from rest_framework import filters, viewsets
+from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -22,6 +22,16 @@ from .serializers import (
 )
 from .tasks import evaluate_challenge_submission
 
+class TrackPageNumberPagination(pagination.PageNumberPagination):
+    page_size = 12
+    page_size_query_param = 'page_size'
+    max_page_size = 50
+
+
+def _track_has_field(field_name: str) -> bool:
+    return any(field.name == field_name for field in Track._meta.get_fields())
+
+
 
 def _ensure_track_owner(track: Track, request) -> None:
     """Bloqueia ação se o usuário logado não for o criador da trilha."""
@@ -29,30 +39,27 @@ def _ensure_track_owner(track: Track, request) -> None:
     if str(track.creator_id) != str(user_id):
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
 
-
-class TrackPagination(PageNumberPagination):
-    page_size = 12
-    page_size_query_param = 'page_size'
-    max_page_size = 50
-
-
 class TrackViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
-    pagination_class = TrackPagination
+    pagination_class = TrackPageNumberPagination
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['title', 'created_at']
     ordering = ['-created_at']
 
     def get_queryset(self):
         queryset = Track.objects.annotate(modules_count=Count('modules')).all()
-        auth_payload = getattr(self.request, 'auth', None) or {}
 
-        if auth_payload.get('role') != 'TEACHER':
+        role = self.request.auth.get('role') if self.request.auth else None
+        if role != 'TEACHER':
             queryset = queryset.filter(status='PUBLISHED')
 
         status = self.request.query_params.get('status')
         if status:
             queryset = queryset.filter(status=status)
+
+        category = self.request.query_params.get('category')
+        if category and _track_has_field('category'):
+            queryset = queryset.filter(category=category)
 
         return queryset
 
