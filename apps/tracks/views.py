@@ -85,7 +85,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'PUBLISHED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -95,7 +95,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'ARCHIVED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=False, methods=['get'], url_path='me/teaching')
     def me_teaching(self, request):
