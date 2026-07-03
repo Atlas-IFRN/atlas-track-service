@@ -22,8 +22,8 @@ class TrackListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Track
-        fields = '__all__'
-        read_only_fields = ['creator_id', 'created_at', 'updated_at']
+        fields = ['id', 'title', 'description', 'status', 'modules_count', 'created_at', 'updated_at']
+        read_only_fields = fields
 
 
 class ModuleSerializer(serializers.ModelSerializer):

@@ -9,11 +9,11 @@ def health_check(request):
 
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('api/track/admin/', admin.site.urls),
     path('health/', health_check),
 
-    path('api/', include('apps.tracks.urls')),
+    path('api/track/', include('apps.tracks.urls')),
 
-    path('api/schema/', SpectacularAPIView.as_view(), name='schema'),
-    path('api/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
+    path('api/track/schema/', SpectacularAPIView.as_view(), name='schema'),
+    path('api/track/docs/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
 ]
