@@ -45,39 +45,39 @@ Veja `.env.example`. Principais: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `A
 ## Endpoints
 
 Documentação interativa disponível em:
-- **Swagger UI:** `http://localhost:8001/api/docs/`
-- **JSON Schema:** `http://localhost:8001/api/schema/`
+- **Swagger UI:** `http://localhost:8000/api/track/docs/`
+- **JSON Schema:** `http://localhost:8000/api/track/schema/`
 
-### Trilhas (`/api/tracks/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/tracks/` | Lista trilhas com `modules_count` agregado |
-| `POST` | `/api/tracks/` | Cria trilha (TEACHER) |
-| `GET`  | `/api/tracks/{id}/` | Detalhe com árvore completa de módulos e conteúdos |
-| `PUT/PATCH` | `/api/tracks/{id}/` | Atualiza trilha (TEACHER) |
-| `DELETE` | `/api/tracks/{id}/` | Remove trilha (TEACHER) |
-
-### Módulos (`/api/modules/`)
+### Trilhas (`/api/track/tracks/`)
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| `GET`  | `/api/modules/?track_id=UUID` | Módulos de uma trilha com `contents_count` |
-| `GET`  | `/api/modules/{id}/` | Módulo com conteúdos aninhados |
+| `GET`  | `/api/track/tracks/` | Lista trilhas com `modules_count` agregado |
+| `POST` | `/api/track/tracks/` | Cria trilha (TEACHER) |
+| `GET`  | `/api/track/tracks/{id}/` | Detalhe com árvore completa de módulos e conteúdos |
+| `PUT/PATCH` | `/api/track/tracks/{id}/` | Atualiza trilha (TEACHER) |
+| `DELETE` | `/api/track/tracks/{id}/` | Remove trilha (TEACHER) |
 
-### Conteúdos (`/api/contents/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/contents/?module_id=UUID` | Conteúdos de um módulo |
-| `GET`  | `/api/contents/{id}/` | Conteúdo individual |
-
-### Matrículas (`/api/user-tracks/`)
+### Módulos (`/api/track/modules/`)
 
 | Método | Endpoint | Descrição |
 |--------|----------|-----------|
-| `GET`  | `/api/user-tracks/` | Lista matrículas |
-| `POST` | `/api/user-tracks/` | Matricula aluno em trilha publicada |
+| `GET`  | `/api/track/modules/?track_id=UUID` | Módulos de uma trilha com `contents_count` |
+| `GET`  | `/api/track/modules/{id}/` | Módulo com conteúdos aninhados |
+
+### Conteúdos (`/api/track/contents/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET`  | `/api/track/contents/?module_id=UUID` | Conteúdos de um módulo |
+| `GET`  | `/api/track/contents/{id}/` | Conteúdo individual |
+
+### Matrículas (`/api/track/user-tracks/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET`  | `/api/track/user-tracks/` | Lista matrículas |
+| `POST` | `/api/track/user-tracks/` | Matricula aluno em trilha publicada |
 
 ## Regras de negócio
 
