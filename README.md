@@ -45,8 +45,8 @@ Veja `.env.example`. Principais: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `A
 ## Endpoints
 
 Documentação interativa disponível em:
-- **Swagger UI:** `http://localhost:8001/api/track/docs/`
-- **JSON Schema:** `http://localhost:8001/api/track/schema/`
+- **Swagger UI:** `http://localhost:8000/api/track/docs/`
+- **JSON Schema:** `http://localhost:8000/api/track/schema/`
 
 ### Trilhas (`/api/track/tracks/`)
 
