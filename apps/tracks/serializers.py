@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .services import get_track_user_progress
 
 
 class ContentSerializer(serializers.ModelSerializer):
@@ -36,11 +37,21 @@ class ModuleSerializer(serializers.ModelSerializer):
 
 class TrackSerializer(serializers.ModelSerializer):
     modules = ModuleSerializer(many=True, read_only=True)
+    user_progress = serializers.SerializerMethodField()
 
     class Meta:
         model = Track
         fields = '__all__'
         read_only_fields = ['creator_id', 'created_at', 'updated_at']
+
+    def get_user_progress(self, obj):
+        request = self.context.get('request')
+        auth = getattr(request, 'auth', None) or {}
+        return get_track_user_progress(
+            track=obj,
+            user_id=auth.get('user_id'),
+            role=auth.get('role'),
+        )
 
 
 class UserContentProgressSerializer(serializers.ModelSerializer):

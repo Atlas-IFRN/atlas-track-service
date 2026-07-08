@@ -3,8 +3,7 @@ from django.db.models import Count
 from django.utils import timezone
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
 from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
@@ -22,10 +21,28 @@ from .serializers import (
 )
 from .tasks import evaluate_challenge_submission
 
+
+NOT_FOUND_DETAIL = 'Não encontrado.'
+
+
 class TrackPageNumberPagination(pagination.PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
     max_page_size = 50
+
+
+class TrackExceptionHandlerMixin:
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
+
+        if isinstance(exc, NotFound) and response is not None:
+            code = getattr(exc.detail, 'code', 'not_found')
+            response.data = {
+                'detail': NOT_FOUND_DETAIL if code == 'not_found' else str(exc.detail),
+                'code': code,
+            }
+
+        return response
 
 
 def _track_has_field(field_name: str) -> bool:
@@ -39,7 +56,7 @@ def _ensure_track_owner(track: Track, request) -> None:
     if str(track.creator_id) != str(user_id):
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
 
-class TrackViewSet(viewsets.ModelViewSet):
+class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
     pagination_class = TrackPageNumberPagination
     filter_backends = [filters.OrderingFilter]
@@ -85,7 +102,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'PUBLISHED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -95,7 +112,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'ARCHIVED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=False, methods=['get'], url_path='me/teaching')
     def me_teaching(self, request):
@@ -144,7 +161,7 @@ class TrackViewSet(viewsets.ModelViewSet):
         return Response(results)
 
 
-class ModuleViewSet(viewsets.ModelViewSet):
+class ModuleViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
 
     def get_queryset(self):
@@ -182,7 +199,7 @@ class ModuleViewSet(viewsets.ModelViewSet):
         return Response(ModuleSerializer(module).data)
 
 
-class ContentViewSet(viewsets.ModelViewSet):
+class ContentViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     serializer_class = ContentSerializer
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
 
@@ -216,7 +233,7 @@ class ContentViewSet(viewsets.ModelViewSet):
         return Response(ContentSerializer(content).data)
 
 
-class UserTrackViewSet(viewsets.ModelViewSet):
+class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC]
     serializer_class = UserTrackSerializer
 
@@ -275,19 +292,19 @@ class UserTrackViewSet(viewsets.ModelViewSet):
         return Response(UserTrackSerializer(user_track, context={'request': request}).data)
 
 
-class UserModuleProgressViewSet(viewsets.ModelViewSet):
+class UserModuleProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC]
     queryset = UserModuleProgress.objects.all()
     serializer_class = UserModuleProgressSerializer
 
 
-class UserContentProgressViewSet(viewsets.ModelViewSet):
+class UserContentProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC]
     queryset = UserContentProgress.objects.all()
     serializer_class = UserContentProgressSerializer
 
 
-class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
+class ChallengeSubmissionViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC]
     queryset = ChallengeSubmission.objects.all()
     serializer_class = ChallengeSubmissionSerializer
