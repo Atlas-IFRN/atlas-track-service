@@ -1,13 +1,22 @@
 from django.contrib import admin
 from .models import (
-    Track, Module, Content, UserTrack,
+    Skill, Track, Module, Content, UserTrack,
     UserModuleProgress, UserContentProgress, ChallengeSubmission, AuditLog
 )
 
+
+@admin.register(Skill)
+class SkillAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'created_at')
+    search_fields = ('name', 'slug')
+    prepopulated_fields = {'slug': ('name',)}
+
+
 @admin.register(Track)
 class TrackAdmin(admin.ModelAdmin):
-    list_display = ('title', 'status', 'created_at')
-    list_filter = ('status',)
+    list_display = ('title', 'level', 'duration_weeks', 'status', 'created_at')
+    list_filter = ('status', 'level', 'skills')
+    filter_horizontal = ('skills',)
     search_fields = ('title', 'description')
 
 @admin.register(Module)

@@ -1,18 +1,19 @@
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
 
-from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .models import ChallengeSubmission, Content, Module, Skill, Track, UserContentProgress, UserModuleProgress, UserTrack
 from .permissions import IsAuthenticatedViaRPC, IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
     ContentSerializer,
     ModuleListSerializer,
     ModuleSerializer,
+    SkillSerializer,
     TrackListSerializer,
     TrackSerializer,
     UserContentProgressSerializer,
@@ -45,26 +46,44 @@ class TrackExceptionHandlerMixin:
         return response
 
 
-def _track_has_field(field_name: str) -> bool:
-    return any(field.name == field_name for field in Track._meta.get_fields())
-
-
-
 def _ensure_track_owner(track: Track, request) -> None:
     """Bloqueia ação se o usuário logado não for o criador da trilha."""
     user_id = request.auth.get('user_id') if request.auth else None
     if str(track.creator_id) != str(user_id):
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
 
+class SkillViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
+    queryset = Skill.objects.all()
+    serializer_class = SkillSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'slug']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+
+
 class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
     pagination_class = TrackPageNumberPagination
-    filter_backends = [filters.OrderingFilter]
-    ordering_fields = ['title', 'created_at']
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'description', 'skills__name', 'skills__slug']
+    ordering_fields = ['title', 'created_at', 'duration_weeks', 'level']
     ordering = ['-created_at']
 
     def get_queryset(self):
-        queryset = Track.objects.annotate(modules_count=Count('modules')).all()
+        queryset = (
+            Track.objects.prefetch_related('skills', 'modules__contents')
+            .annotate(
+                modules_count=Count('modules', distinct=True),
+                total_duration_minutes=Sum('modules__contents__duration_minutes'),
+                challenges_count=Count(
+                    'modules__contents',
+                    filter=Q(modules__contents__content_type='CHALLENGE'),
+                    distinct=True,
+                ),
+            )
+            .all()
+        )
 
         role = self.request.auth.get('role') if self.request.auth else None
         if role != 'TEACHER':
@@ -74,9 +93,17 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         if status:
             queryset = queryset.filter(status=status)
 
-        category = self.request.query_params.get('category')
-        if category and _track_has_field('category'):
-            queryset = queryset.filter(category=category)
+        level = self.request.query_params.get('level')
+        if level:
+            queryset = queryset.filter(level=level)
+
+        skills = self.request.query_params.get('skills') or self.request.query_params.get('skill')
+        if skills:
+            skill_values = [value.strip() for value in skills.split(',') if value.strip()]
+            queryset = queryset.filter(
+                Q(skills__slug__in=skill_values)
+                | Q(skills__name__in=skill_values)
+            ).distinct()
 
         return queryset
 

@@ -7,6 +7,25 @@ from django.utils.translation import gettext_lazy as _
 # Create your models here.
 
 
+class Skill(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=80, unique=True)
+    slug = models.SlugField(max_length=90, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
+class TrackLevel(models.TextChoices):
+    BEGINNER = 'BEGINNER', _('Iniciante')
+    INTERMEDIATE = 'INTERMEDIATE', _('Intermediario')
+    ADVANCED = 'ADVANCED', _('Avancado')
+
+
 class Track(models.Model):
     STATUS_CHOICES = [
         ('DRAFT', 'Rascunho'),
@@ -18,6 +37,11 @@ class Track(models.Model):
     creator_id = models.UUIDField(help_text="UUID do professor criador (resolvido via API de Auth)")
     title = models.CharField(max_length=225)
     description = models.TextField()
+    level = models.CharField(max_length=20, choices=TrackLevel.choices, default=TrackLevel.BEGINNER)
+    duration_weeks = models.PositiveIntegerField(default=1)
+    skills = models.ManyToManyField(Skill, blank=True, related_name='tracks')
+    outcomes = models.JSONField(default=list, blank=True)
+    prerequisites = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
