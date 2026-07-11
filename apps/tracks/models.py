@@ -93,6 +93,10 @@ class Content(models.Model):
         ('REPOSITORY', 'Repositório'),
         ('CHALLENGE', 'Desafio'),
     ]
+    VISIBILITY_CHOICES = [
+        ('enrolled', 'Visível para matriculados'),
+        ('draft', 'Rascunho'),
+    ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     module = models.ForeignKey(Module, on_delete=models.CASCADE, related_name='contents')
@@ -100,6 +104,7 @@ class Content(models.Model):
     description = models.TextField()
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
     content_url = models.URLField(null=True, blank=True, help_text="URL para VIDEO, ARTICLE ou REPOSITORY")
+    visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='enrolled')
     instructions = models.TextField(null=True, blank=True, help_text="Enunciado quando for um CHALLENGE")
     language = models.CharField(
         max_length=50,
