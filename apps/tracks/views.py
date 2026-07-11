@@ -1,19 +1,20 @@
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, Q, Sum
 from django.utils import timezone
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
-from .permissions import IsAuthenticatedViaRPC, IsTeacherOrReadOnly
+from .models import ChallengeSubmission, Content, Module, Skill, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .permissions import IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
     ContentSerializer,
     ModuleListSerializer,
     ModuleSerializer,
+    SkillSerializer,
     TrackListSerializer,
     TrackSerializer,
     UserContentProgressSerializer,
@@ -22,34 +23,70 @@ from .serializers import (
 )
 from .tasks import evaluate_challenge_submission
 
+
+NOT_FOUND_DETAIL = 'Não encontrado.'
+
+
 class TrackPageNumberPagination(pagination.PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
     max_page_size = 50
 
 
-def _track_has_field(field_name: str) -> bool:
-    return any(field.name == field_name for field in Track._meta.get_fields())
+class TrackExceptionHandlerMixin:
+    def handle_exception(self, exc):
+        response = super().handle_exception(exc)
 
+        if isinstance(exc, NotFound) and response is not None:
+            code = getattr(exc.detail, 'code', 'not_found')
+            response.data = {
+                'detail': NOT_FOUND_DETAIL if code == 'not_found' else str(exc.detail),
+                'code': code,
+            }
+
+        return response
 
 
 def _ensure_track_owner(track: Track, request) -> None:
     """Bloqueia ação se o usuário logado não for o criador da trilha."""
-    user_id = request.auth.get('user_id') if request.auth else None
+    user_id = request.user.id
     if str(track.creator_id) != str(user_id):
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
 
-class TrackViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
+class SkillViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
+    queryset = Skill.objects.all()
+    serializer_class = SkillSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'slug']
+    ordering_fields = ['name', 'created_at']
+    ordering = ['name']
+
+
+class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     pagination_class = TrackPageNumberPagination
-    filter_backends = [filters.OrderingFilter]
-    ordering_fields = ['title', 'created_at']
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['title', 'description', 'skills__name', 'skills__slug']
+    ordering_fields = ['title', 'created_at', 'duration_weeks', 'level']
     ordering = ['-created_at']
 
     def get_queryset(self):
-        queryset = Track.objects.annotate(modules_count=Count('modules')).all()
+        queryset = (
+            Track.objects.prefetch_related('skills', 'modules__contents')
+            .annotate(
+                modules_count=Count('modules', distinct=True),
+                total_duration_minutes=Sum('modules__contents__duration_minutes'),
+                challenges_count=Count(
+                    'modules__contents',
+                    filter=Q(modules__contents__content_type='CHALLENGE'),
+                    distinct=True,
+                ),
+            )
+            .all()
+        )
 
-        role = self.request.auth.get('role') if self.request.auth else None
+        role = self.request.user.role
         if role != 'TEACHER':
             queryset = queryset.filter(status='PUBLISHED')
 
@@ -57,9 +94,17 @@ class TrackViewSet(viewsets.ModelViewSet):
         if status:
             queryset = queryset.filter(status=status)
 
-        category = self.request.query_params.get('category')
-        if category and _track_has_field('category'):
-            queryset = queryset.filter(category=category)
+        level = self.request.query_params.get('level')
+        if level:
+            queryset = queryset.filter(level=level)
+
+        skills = self.request.query_params.get('skills') or self.request.query_params.get('skill')
+        if skills:
+            skill_values = [value.strip() for value in skills.split(',') if value.strip()]
+            queryset = queryset.filter(
+                Q(skills__slug__in=skill_values)
+                | Q(skills__name__in=skill_values)
+            ).distinct()
 
         return queryset
 
@@ -69,7 +114,7 @@ class TrackViewSet(viewsets.ModelViewSet):
         return TrackSerializer
 
     def perform_create(self, serializer):
-        logged_user_id = self.request.auth.get('user_id')
+        logged_user_id = self.request.user.id
         serializer.save(creator_id=logged_user_id)
 
     @action(detail=True, methods=['post'])
@@ -85,7 +130,7 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'PUBLISHED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -95,15 +140,15 @@ class TrackViewSet(viewsets.ModelViewSet):
 
         track.status = 'ARCHIVED'
         track.save()
-        return Response(TrackSerializer(track).data)
+        return Response(self.get_serializer(track).data)
 
     @action(detail=False, methods=['get'], url_path='me/teaching')
     def me_teaching(self, request):
         """Trilhas criadas pelo professor atual + contagem de inscritos."""
-        if request.auth.get('role') != 'TEACHER':
+        if request.user.role != 'TEACHER':
             raise PermissionDenied("Apenas professores podem acessar este painel.")
 
-        user_id = request.auth.get('user_id')
+        user_id = request.user.id
         queryset = (
             Track.objects.filter(creator_id=user_id)
             .annotate(modules_count=Count('modules', distinct=True), enrollments_count=Count('enrollments', distinct=True))
@@ -144,11 +189,26 @@ class TrackViewSet(viewsets.ModelViewSet):
         return Response(results)
 
 
-class ModuleViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
+class ModuleViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
 
     def get_queryset(self):
         queryset = Module.objects.annotate(contents_count=Count('contents')).all()
+
+        user = self.request.user
+        user_id = user.id
+        role = user.role
+        if role == 'TEACHER':
+            visibility = Q(track__status='PUBLISHED')
+        else:
+            visibility = Q(
+                track__status='PUBLISHED',
+                track__enrollments__user_id=user_id,
+                track__enrollments__status__in=['IN_PROGRESS', 'COMPLETED'],
+            )
+        if user_id:
+            visibility |= Q(track__creator_id=user_id)
+        queryset = queryset.filter(visibility).distinct()
 
         track_id = self.request.query_params.get('track_id')
         if track_id:
@@ -182,12 +242,31 @@ class ModuleViewSet(viewsets.ModelViewSet):
         return Response(ModuleSerializer(module).data)
 
 
-class ContentViewSet(viewsets.ModelViewSet):
+class ContentViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     serializer_class = ContentSerializer
-    permission_classes = [IsAuthenticatedViaRPC, IsTeacherOrReadOnly]
+    permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
 
     def get_queryset(self):
         queryset = Content.objects.all()
+
+        user = self.request.user
+        user_id = user.id
+        role = user.role
+        if role == 'TEACHER':
+            visibility = Q(
+                module__track__status='PUBLISHED',
+                visibility='enrolled',
+            )
+        else:
+            visibility = Q(
+                module__track__status='PUBLISHED',
+                module__track__enrollments__user_id=user_id,
+                module__track__enrollments__status__in=['IN_PROGRESS', 'COMPLETED'],
+                visibility='enrolled',
+            )
+        if user_id:
+            visibility |= Q(module__track__creator_id=user_id)
+        queryset = queryset.filter(visibility).distinct()
 
         module_id = self.request.query_params.get('module_id')
         if module_id:
@@ -216,8 +295,8 @@ class ContentViewSet(viewsets.ModelViewSet):
         return Response(ContentSerializer(content).data)
 
 
-class UserTrackViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC]
+class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
     serializer_class = UserTrackSerializer
 
     def get_queryset(self):
@@ -225,20 +304,20 @@ class UserTrackViewSet(viewsets.ModelViewSet):
         if target_user_uuid:
             return UserTrack.objects.filter(user_id=target_user_uuid)
 
-        if self.request.auth:
-            logged_user_id = self.request.auth.get('user_id')
+        if self.request.user.is_authenticated:
+            logged_user_id = self.request.user.id
             return UserTrack.objects.filter(user_id=logged_user_id)
 
         return UserTrack.objects.none()
 
     def perform_create(self, serializer):
-        logged_user_id = self.request.auth.get('user_id')
+        logged_user_id = self.request.user.id
         serializer.save(user_id=logged_user_id)
 
     @action(detail=False, methods=['get'])
     def me(self, request):
         """Trilhas do aluno atual com progresso agregado."""
-        user_id = request.auth.get('user_id')
+        user_id = request.user.id
         queryset = UserTrack.objects.filter(user_id=user_id).select_related('track')
 
         results = []
@@ -261,7 +340,7 @@ class UserTrackViewSet(viewsets.ModelViewSet):
     def drop(self, request, pk=None):
         """Aluno desiste de uma trilha (status → DROPPED). Só o próprio aluno."""
         user_track = self.get_object()
-        user_id = request.auth.get('user_id')
+        user_id = request.user.id
         if str(user_track.user_id) != str(user_id):
             raise PermissionDenied("Você só pode desistir das suas próprias inscrições.")
 
@@ -275,30 +354,30 @@ class UserTrackViewSet(viewsets.ModelViewSet):
         return Response(UserTrackSerializer(user_track, context={'request': request}).data)
 
 
-class UserModuleProgressViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC]
+class UserModuleProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
     queryset = UserModuleProgress.objects.all()
     serializer_class = UserModuleProgressSerializer
 
 
-class UserContentProgressViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC]
+class UserContentProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
     queryset = UserContentProgress.objects.all()
     serializer_class = UserContentProgressSerializer
 
 
-class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
-    permission_classes = [IsAuthenticatedViaRPC]
+class ChallengeSubmissionViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+    permission_classes = [IsAuthenticated]
     queryset = ChallengeSubmission.objects.all()
     serializer_class = ChallengeSubmissionSerializer
 
     def get_queryset(self):
         """Aluno vê as próprias; professor vê as das trilhas que criou."""
-        if not self.request.auth:
+        if not self.request.user.is_authenticated:
             return ChallengeSubmission.objects.none()
 
-        user_id = self.request.auth.get('user_id')
-        role = self.request.auth.get('role')
+        user_id = self.request.user.id
+        role = self.request.user.role
 
         if role == 'TEACHER':
             return ChallengeSubmission.objects.filter(
@@ -317,7 +396,7 @@ class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
         """Professor aprova manualmente uma submissão. Só o dono da trilha."""
         submission = self.get_object()
         _ensure_track_owner(submission.challenge.module.track, request)
-        if request.auth.get('role') != 'TEACHER':
+        if request.user.role != 'TEACHER':
             raise PermissionDenied("Apenas professores podem aprovar submissões.")
 
         submission.ai_status = 'EVALUATED'
@@ -333,10 +412,10 @@ class ChallengeSubmissionViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='pending-review')
     def pending_review(self, request):
         """Submissões avaliadas pela IA aguardando ação do professor."""
-        if request.auth.get('role') != 'TEACHER':
+        if request.user.role != 'TEACHER':
             raise PermissionDenied("Apenas professores podem acessar este painel.")
 
-        user_id = request.auth.get('user_id')
+        user_id = request.user.id
         queryset = ChallengeSubmission.objects.filter(
             challenge__module__track__creator_id=user_id,
             ai_status='EVALUATED',

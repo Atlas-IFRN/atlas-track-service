@@ -26,6 +26,8 @@ SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-p6^ped7h!8lxdm0f7
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
+CORS_ALLOW_CREDENTIALS = True
 
 # ==============================================================================
 # DATABASE CONFIGURATION
@@ -49,6 +51,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     # Local apps
 
+    "corsheaders",
     "rest_framework",
     "drf_spectacular",
 
@@ -60,6 +63,7 @@ INSTALLED_APPS = [
 # ------------------------------------------------------------------------------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -108,6 +112,22 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ==============================================================================
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'apps.tracks.authentication.AtlasJWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+# ==============================================================================
+# SIMPLE JWT
+# ==============================================================================
+# Validação local do token pelo header. A SIGNING_KEY assume o padrão do
+# SimpleJWT (SECRET_KEY), compartilhada entre os serviços via DJANGO_SECRET_KEY.
+SIMPLE_JWT = {
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'TOKEN_USER_CLASS': 'apps.tracks.authentication.AtlasTokenUser',
 }
 
 SPECTACULAR_SETTINGS = {
@@ -117,8 +137,6 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
 }
-
-AUTH_GRPC_URL = env('AUTH_GRPC_URL', default='auth-service:50051')
 
 # ==============================================================================
 # CELERY (RabbitMQ broker)

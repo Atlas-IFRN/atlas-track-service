@@ -1,6 +1,26 @@
+from datetime import timedelta
+
+from django.utils import timezone
 from rest_framework import serializers
 
-from .models import ChallengeSubmission, Content, Module, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .models import (
+    ChallengeSubmission,
+    Content,
+    Module,
+    Skill,
+    Track,
+    UserContentProgress,
+    UserModuleProgress,
+    UserTrack,
+)
+from .services import get_track_user_progress
+
+
+class SkillSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Skill
+        fields = ['id', 'name', 'slug', 'created_at']
+        read_only_fields = ['id', 'created_at']
 
 
 class ContentSerializer(serializers.ModelSerializer):
@@ -17,30 +37,279 @@ class ModuleListSerializer(serializers.ModelSerializer):
         fields = ['id', 'title', 'description', 'display_order', 'contents_count', 'created_at']
 
 
+def _get_modules_count(track):
+    annotated_value = getattr(track, 'modules_count', None)
+    if annotated_value is not None:
+        return annotated_value
+    return track.modules.count()
+
+
+def _get_total_duration_minutes(track):
+    annotated_value = getattr(track, 'total_duration_minutes', None)
+    if annotated_value is not None:
+        return annotated_value or 0
+
+    total = 0
+    for module in track.modules.all():
+        for content in module.contents.all():
+            total += content.duration_minutes or 0
+    return total
+
+
+def _get_challenges_count(track):
+    annotated_value = getattr(track, 'challenges_count', None)
+    if annotated_value is not None:
+        return annotated_value
+
+    return Content.objects.filter(module__track=track, content_type='CHALLENGE').count()
+
+
+def _serialize_latest_evaluation(track, request):
+    user = getattr(request, 'user', None)
+    authenticated = bool(user and user.is_authenticated)
+    user_id = user.id if authenticated else None
+    role = getattr(user, 'role', None) if authenticated else None
+
+    queryset = ChallengeSubmission.objects.filter(
+        challenge__module__track=track,
+        ai_status='EVALUATED',
+    ).select_related('challenge', 'challenge__module')
+
+    if role == 'TEACHER':
+        queryset = queryset.filter(challenge__module__track__creator_id=user_id)
+    elif user_id:
+        queryset = queryset.filter(user_track__user_id=user_id)
+    else:
+        return None
+
+    submission = queryset.order_by('-evaluated_at', '-submitted_at').first()
+    if not submission:
+        return None
+
+    score = int(submission.ai_score or 0)
+    criteria = submission.ai_criteries if isinstance(submission.ai_criteries, list) else []
+    checks = []
+
+    for criterion in criteria:
+        if not isinstance(criterion, dict):
+            continue
+
+        label = criterion.get('label') or criterion.get('name') or criterion.get('id') or 'Criterio'
+        present = criterion.get('present')
+        if present is None:
+            present = criterion.get('passed', criterion.get('ok', False))
+
+        checks.append({
+            'label': str(label),
+            'status': 'success' if bool(present) else 'danger',
+        })
+
+    attended = sum(1 for check in checks if check['status'] == 'success')
+    pending = sum(1 for check in checks if check['status'] == 'danger')
+
+    return {
+        'score': score,
+        'status': 'Aprovado' if score >= 70 else 'Pendente',
+        'challenge': submission.challenge.title,
+        'module': submission.challenge.module.title,
+        'attended': attended,
+        'pending': pending,
+        'criteria': len(checks),
+        'checks': checks,
+    }
+
+
 class TrackListSerializer(serializers.ModelSerializer):
-    modules_count = serializers.IntegerField(read_only=True)
+    skills = SkillSerializer(many=True, read_only=True)
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    modules_count = serializers.SerializerMethodField()
+    total_duration_minutes = serializers.SerializerMethodField()
+    challenges_count = serializers.SerializerMethodField()
+    user_progress = serializers.SerializerMethodField()
+    latest_evaluation = serializers.SerializerMethodField()
+    is_new = serializers.SerializerMethodField()
 
     class Meta:
         model = Track
-        fields = ['id', 'title', 'description', 'status', 'modules_count', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'title',
+            'description',
+            'level',
+            'level_display',
+            'duration_weeks',
+            'skills',
+            'outcomes',
+            'prerequisites',
+            'status',
+            'modules_count',
+            'total_duration_minutes',
+            'challenges_count',
+            'user_progress',
+            'latest_evaluation',
+            'is_new',
+            'created_at',
+            'updated_at',
+        ]
         read_only_fields = fields
+
+    def get_modules_count(self, obj):
+        return _get_modules_count(obj)
+
+    def get_total_duration_minutes(self, obj):
+        return _get_total_duration_minutes(obj)
+
+    def get_challenges_count(self, obj):
+        return _get_challenges_count(obj)
+
+    def get_user_progress(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
+        return get_track_user_progress(
+            track=obj,
+            user_id=user.id if authenticated else None,
+            role=getattr(user, 'role', None) if authenticated else None,
+        )
+
+    def get_latest_evaluation(self, obj):
+        return _serialize_latest_evaluation(obj, self.context.get('request'))
+
+    def get_is_new(self, obj):
+        if not obj.created_at:
+            return False
+        return obj.created_at >= timezone.now() - timedelta(days=14)
 
 
 class ModuleSerializer(serializers.ModelSerializer):
-    contents = ContentSerializer(many=True, read_only=True)
+    contents = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
         fields = '__all__'
 
+    def get_contents(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
+        user_id = user.id if authenticated else None
+        contents = obj.contents.all()
+
+        if str(obj.track.creator_id) != str(user_id):
+            contents = contents.filter(visibility='enrolled')
+
+        return ContentSerializer(contents, many=True, context=self.context).data
+
 
 class TrackSerializer(serializers.ModelSerializer):
-    modules = ModuleSerializer(many=True, read_only=True)
+    modules = serializers.SerializerMethodField()
+    skills = SkillSerializer(many=True, read_only=True)
+    skill_ids = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Skill.objects.all(),
+        source='skills',
+        write_only=True,
+        required=False,
+    )
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    modules_count = serializers.SerializerMethodField()
+    total_duration_minutes = serializers.SerializerMethodField()
+    challenges_count = serializers.SerializerMethodField()
+    user_progress = serializers.SerializerMethodField()
+    latest_evaluation = serializers.SerializerMethodField()
+    is_new = serializers.SerializerMethodField()
 
     class Meta:
         model = Track
-        fields = '__all__'
-        read_only_fields = ['creator_id', 'created_at', 'updated_at']
+        fields = [
+            'id',
+            'creator_id',
+            'title',
+            'description',
+            'level',
+            'level_display',
+            'duration_weeks',
+            'skills',
+            'skill_ids',
+            'outcomes',
+            'prerequisites',
+            'status',
+            'modules',
+            'modules_count',
+            'total_duration_minutes',
+            'challenges_count',
+            'user_progress',
+            'latest_evaluation',
+            'is_new',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = [
+            'id',
+            'creator_id',
+            'status',
+            'created_at',
+            'updated_at',
+            'modules_count',
+            'total_duration_minutes',
+            'challenges_count',
+            'user_progress',
+            'latest_evaluation',
+            'is_new',
+        ]
+
+    def get_modules_count(self, obj):
+        return _get_modules_count(obj)
+
+    def get_modules(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
+        user_id = user.id if authenticated else None
+        role = getattr(user, 'role', None) if authenticated else None
+
+        can_view_modules = role == 'TEACHER'
+        if user_id and str(obj.creator_id) == str(user_id):
+            can_view_modules = True
+        if user_id and UserTrack.objects.filter(
+            user_id=user_id,
+            track=obj,
+            status__in=['IN_PROGRESS', 'COMPLETED'],
+        ).exists():
+            can_view_modules = True
+
+        if not can_view_modules:
+            return []
+
+        return ModuleSerializer(
+            obj.modules.all(),
+            many=True,
+            context=self.context,
+        ).data
+
+    def get_total_duration_minutes(self, obj):
+        return _get_total_duration_minutes(obj)
+
+    def get_challenges_count(self, obj):
+        return _get_challenges_count(obj)
+
+    def get_user_progress(self, obj):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
+        return get_track_user_progress(
+            track=obj,
+            user_id=user.id if authenticated else None,
+            role=getattr(user, 'role', None) if authenticated else None,
+        )
+
+    def get_latest_evaluation(self, obj):
+        return _serialize_latest_evaluation(obj, self.context.get('request'))
+
+    def get_is_new(self, obj):
+        if not obj.created_at:
+            return False
+        return obj.created_at >= timezone.now() - timedelta(days=14)
 
 
 class UserContentProgressSerializer(serializers.ModelSerializer):
@@ -78,10 +347,10 @@ class UserTrackSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
 
-        # Apenas executa se tiver um request com Auth (evita quebrar no painel Admin ou testes soltos)
-        if request and request.auth:
-            user_id = request.auth.get('user_id')
-            user_role = request.auth.get('role')
+        # Apenas executa se tiver um request autenticado (evita quebrar no painel Admin ou testes soltos)
+        if request and getattr(request, 'user', None) and request.user.is_authenticated:
+            user_id = request.user.id
+            user_role = request.user.role
 
             # PERMISSÃO: Professor não pode se matricular
             if user_role == 'TEACHER':
