@@ -9,7 +9,7 @@ NOT_ENROLLED_PROGRESS = {
 
 
 def get_track_user_progress(track, user_id, role=None):
-    if str(role or '').strip().upper() in {'TEACHER', 'PROFESSOR'}:
+    if role == 'TEACHER':
         return None
 
     if not user_id:
