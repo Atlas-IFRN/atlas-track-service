@@ -9,13 +9,17 @@ NOT_ENROLLED_PROGRESS = {
 
 
 def get_track_user_progress(track, user_id, role=None):
-    if role == 'TEACHER':
+    if str(role or '').strip().upper() in {'TEACHER', 'PROFESSOR'}:
         return None
 
     if not user_id:
         return NOT_ENROLLED_PROGRESS.copy()
 
-    user_track = UserTrack.objects.filter(user_id=user_id, track=track).first()
+    user_track = UserTrack.objects.filter(
+        user_id=user_id,
+        track=track,
+        status__in=['IN_PROGRESS', 'COMPLETED'],
+    ).first()
     if not user_track:
         return NOT_ENROLLED_PROGRESS.copy()
 

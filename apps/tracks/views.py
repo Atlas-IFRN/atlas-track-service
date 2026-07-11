@@ -194,6 +194,21 @@ class ModuleViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         queryset = Module.objects.annotate(contents_count=Count('contents')).all()
 
+        auth = self.request.auth or {}
+        user_id = auth.get('user_id')
+        role = str(auth.get('role', '')).strip().upper()
+        if role in {'TEACHER', 'PROFESSOR'}:
+            visibility = Q(track__status='PUBLISHED')
+        else:
+            visibility = Q(
+                track__status='PUBLISHED',
+                track__enrollments__user_id=user_id,
+                track__enrollments__status__in=['IN_PROGRESS', 'COMPLETED'],
+            )
+        if user_id:
+            visibility |= Q(track__creator_id=user_id)
+        queryset = queryset.filter(visibility).distinct()
+
         track_id = self.request.query_params.get('track_id')
         if track_id:
             queryset = queryset.filter(track_id=track_id)
@@ -232,6 +247,25 @@ class ContentViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = Content.objects.all()
+
+        auth = self.request.auth or {}
+        user_id = auth.get('user_id')
+        role = str(auth.get('role', '')).strip().upper()
+        if role in {'TEACHER', 'PROFESSOR'}:
+            visibility = Q(
+                module__track__status='PUBLISHED',
+                visibility='enrolled',
+            )
+        else:
+            visibility = Q(
+                module__track__status='PUBLISHED',
+                module__track__enrollments__user_id=user_id,
+                module__track__enrollments__status__in=['IN_PROGRESS', 'COMPLETED'],
+                visibility='enrolled',
+            )
+        if user_id:
+            visibility |= Q(module__track__creator_id=user_id)
+        queryset = queryset.filter(visibility).distinct()
 
         module_id = self.request.query_params.get('module_id')
         if module_id:

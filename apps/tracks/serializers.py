@@ -180,15 +180,26 @@ class TrackListSerializer(serializers.ModelSerializer):
 
 
 class ModuleSerializer(serializers.ModelSerializer):
-    contents = ContentSerializer(many=True, read_only=True)
+    contents = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
         fields = '__all__'
 
+    def get_contents(self, obj):
+        request = self.context.get('request')
+        auth = getattr(request, 'auth', None) or {}
+        user_id = auth.get('user_id')
+        contents = obj.contents.all()
+
+        if str(obj.track.creator_id) != str(user_id):
+            contents = contents.filter(visibility='enrolled')
+
+        return ContentSerializer(contents, many=True, context=self.context).data
+
 
 class TrackSerializer(serializers.ModelSerializer):
-    modules = ModuleSerializer(many=True, read_only=True)
+    modules = serializers.SerializerMethodField()
     skills = SkillSerializer(many=True, read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
         many=True,
@@ -233,6 +244,7 @@ class TrackSerializer(serializers.ModelSerializer):
         read_only_fields = [
             'id',
             'creator_id',
+            'status',
             'created_at',
             'updated_at',
             'modules_count',
@@ -245,6 +257,31 @@ class TrackSerializer(serializers.ModelSerializer):
 
     def get_modules_count(self, obj):
         return _get_modules_count(obj)
+
+    def get_modules(self, obj):
+        request = self.context.get('request')
+        auth = getattr(request, 'auth', None) or {}
+        user_id = auth.get('user_id')
+        role = str(auth.get('role', '')).strip().upper()
+
+        can_view_modules = role in {'TEACHER', 'PROFESSOR'}
+        if str(obj.creator_id) == str(user_id):
+            can_view_modules = True
+        if user_id and UserTrack.objects.filter(
+            user_id=user_id,
+            track=obj,
+            status__in=['IN_PROGRESS', 'COMPLETED'],
+        ).exists():
+            can_view_modules = True
+
+        if not can_view_modules:
+            return []
+
+        return ModuleSerializer(
+            obj.modules.all(),
+            many=True,
+            context=self.context,
+        ).data
 
     def get_total_duration_minutes(self, obj):
         return _get_total_duration_minutes(obj)
