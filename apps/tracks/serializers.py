@@ -65,9 +65,10 @@ def _get_challenges_count(track):
 
 
 def _serialize_latest_evaluation(track, request):
-    auth = getattr(request, 'auth', None) or {}
-    user_id = auth.get('user_id')
-    role = auth.get('role')
+    user = getattr(request, 'user', None)
+    authenticated = bool(user and user.is_authenticated)
+    user_id = user.id if authenticated else None
+    role = getattr(user, 'role', None) if authenticated else None
 
     queryset = ChallengeSubmission.objects.filter(
         challenge__module__track=track,
@@ -163,11 +164,12 @@ class TrackListSerializer(serializers.ModelSerializer):
 
     def get_user_progress(self, obj):
         request = self.context.get('request')
-        auth = getattr(request, 'auth', None) or {}
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
         return get_track_user_progress(
             track=obj,
-            user_id=auth.get('user_id'),
-            role=auth.get('role'),
+            user_id=user.id if authenticated else None,
+            role=getattr(user, 'role', None) if authenticated else None,
         )
 
     def get_latest_evaluation(self, obj):
@@ -254,11 +256,12 @@ class TrackSerializer(serializers.ModelSerializer):
 
     def get_user_progress(self, obj):
         request = self.context.get('request')
-        auth = getattr(request, 'auth', None) or {}
+        user = getattr(request, 'user', None)
+        authenticated = bool(user and user.is_authenticated)
         return get_track_user_progress(
             track=obj,
-            user_id=auth.get('user_id'),
-            role=auth.get('role'),
+            user_id=user.id if authenticated else None,
+            role=getattr(user, 'role', None) if authenticated else None,
         )
 
     def get_latest_evaluation(self, obj):
@@ -305,10 +308,10 @@ class UserTrackSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
 
-        # Apenas executa se tiver um request com Auth (evita quebrar no painel Admin ou testes soltos)
-        if request and request.auth:
-            user_id = request.auth.get('user_id')
-            user_role = request.auth.get('role')
+        # Apenas executa se tiver um request autenticado (evita quebrar no painel Admin ou testes soltos)
+        if request and getattr(request, 'user', None) and request.user.is_authenticated:
+            user_id = request.user.id
+            user_role = request.user.role
 
             # PERMISSÃO: Professor não pode se matricular
             if user_role == 'TEACHER':

@@ -112,6 +112,22 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # ==============================================================================
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'apps.tracks.authentication.AtlasJWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+# ==============================================================================
+# SIMPLE JWT
+# ==============================================================================
+# Validação local do token pelo header. A SIGNING_KEY assume o padrão do
+# SimpleJWT (SECRET_KEY), compartilhada entre os serviços via DJANGO_SECRET_KEY.
+SIMPLE_JWT = {
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'TOKEN_USER_CLASS': 'apps.tracks.authentication.AtlasTokenUser',
 }
 
 SPECTACULAR_SETTINGS = {
@@ -121,8 +137,6 @@ SPECTACULAR_SETTINGS = {
     'SERVE_INCLUDE_SCHEMA': False,
     'COMPONENT_SPLIT_REQUEST': True,
 }
-
-AUTH_GRPC_URL = env('AUTH_GRPC_URL', default='auth-service:50051')
 
 # ==============================================================================
 # CELERY (RabbitMQ broker)
