@@ -154,6 +154,15 @@ CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+# Fila dedicada deste serviço. Como o RabbitMQ é compartilhado com outros
+# serviços (notification...), cada worker escuta a SUA fila nomeada em vez da
+# fila `default` — evita que um worker consuma mensagem de task que não conhece.
+TRACKS_QUEUE = env("TRACKS_QUEUE", default="tracks")
+
+CELERY_TASK_ROUTES = {
+    'tracks.evaluate_challenge_submission': {'queue': TRACKS_QUEUE},
+}
+
 # ==============================================================================
 # AI SERVICE
 # ==============================================================================
