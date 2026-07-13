@@ -237,24 +237,10 @@ class UserContentProgress(models.Model):
 
     def clean(self):
         super().clean()
-        # Regra 1: Anti-Pulo (Conteúdos)
-        if self.status == 'COMPLETED':
-            # Busca o conteúdo anterior do mesmo módulo
-            previous_content = (
-                Content.objects.filter(module=self.content.module, display_order__lt=self.content.display_order)
-                .order_by('-display_order')
-                .first()
+        if self.content.module.track_id != self.user_track.track_id:
+            raise ValidationError(
+                {"content": "O conteúdo não pertence à trilha desta matrícula."}
             )
-
-            if previous_content:
-                prev_progress = UserContentProgress.objects.filter(
-                    user_track=self.user_track, content=previous_content, status='COMPLETED'
-                ).exists()
-
-                if not prev_progress:
-                    raise ValidationError(
-                        {"status": "Você precisa concluir o conteúdo anterior antes de avançar para este."}
-                    )
 
     def save(self, *args, **kwargs):
         self.full_clean()
