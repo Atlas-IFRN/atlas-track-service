@@ -159,6 +159,11 @@ CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 # fila `default` — evita que um worker consuma mensagem de task que não conhece.
 TRACKS_QUEUE = env("TRACKS_QUEUE", default="tracks")
 
+# Fila do notification-service. O track também é PRODUTOR de notificações
+# (ex.: desafio avaliado) — publica `notifications.create` nesta fila via
+# send_task, sem conhecer a task do consumidor.
+NOTIFICATIONS_QUEUE = env("NOTIFICATIONS_QUEUE", default="notifications")
+
 CELERY_TASK_ROUTES = {
     'tracks.evaluate_challenge_submission': {'queue': TRACKS_QUEUE},
 }
