@@ -6,6 +6,7 @@ from django.conf import settings
 from django.utils import timezone
 
 from .models import ChallengeSubmission
+from .notifications import send_notification
 
 logger = logging.getLogger(__name__)
 
@@ -88,6 +89,11 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
             ai_feedback=detail,
             evaluated_at=timezone.now(),
         )
+        send_notification(
+            submission.user_track.user_id,
+            "Falha na avaliação do desafio",
+            f"Não foi possível avaliar o desafio '{challenge.title}'. Revise o repositório e envie novamente.",
+        )
         return {"status": "rejected", "submission_id": submission_id, "detail": detail}
 
     if response.status_code >= 500:
@@ -126,9 +132,16 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         evaluated_at=timezone.now(),
     )
 
-    logger.info("Submission %s avaliada com score=%s", submission.pk, data.get('score'))
+    score = data.get('score')
+    send_notification(
+        submission.user_track.user_id,
+        "Desafio avaliado",
+        f"O desafio '{challenge.title}' foi avaliado" + (f" — nota {score}." if score is not None else "."),
+    )
+
+    logger.info("Submission %s avaliada com score=%s", submission.pk, score)
     return {
         "status": "evaluated",
         "submission_id": submission_id,
-        "score": data.get('score'),
+        "score": score,
     }
