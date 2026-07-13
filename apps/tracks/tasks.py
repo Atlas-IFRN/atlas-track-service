@@ -10,21 +10,6 @@ from .models import ChallengeSubmission
 logger = logging.getLogger(__name__)
 
 
-def _build_challenge_description(challenge) -> str:
-    description = challenge.instructions or ""
-    if not challenge.technical_requirements:
-        return description
-
-    formatted_requirements = "\n".join(
-        f"- {requirement}"
-        for requirement in challenge.technical_requirements
-    )
-    return (
-        f"{description}\n\n"
-        f"Requisitos técnicos obrigatórios:\n{formatted_requirements}"
-    ).strip()
-
-
 def _extract_ai_detail(response: requests.Response) -> str:
     """Tira a string `detail` do JSON do ai-service (FastAPI HTTPException).
 
@@ -74,7 +59,7 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         "github_repo_url": submission.github_url,
         "language": (challenge.language or "python").strip(),
         "criteria": challenge.evaluation_criteria or {},
-        "challenge_description": _build_challenge_description(challenge),
+        "challenge_description": challenge.instructions or "",
         "theme": challenge.title or None,
     }
 

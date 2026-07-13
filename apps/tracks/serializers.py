@@ -33,23 +33,6 @@ class ContentSerializer(serializers.ModelSerializer):
             'content_type',
             getattr(self.instance, 'content_type', None),
         )
-        requirements = attrs.get(
-            'technical_requirements',
-            getattr(self.instance, 'technical_requirements', []),
-        )
-
-        if not isinstance(requirements, list) or any(
-            not isinstance(requirement, str) for requirement in requirements
-        ):
-            raise serializers.ValidationError({
-                'technical_requirements': 'Informe os requisitos como uma lista de textos.'
-            })
-
-        attrs['technical_requirements'] = [
-            requirement.strip()
-            for requirement in requirements
-            if requirement.strip()
-        ]
 
         if content_type == 'ARTICLE':
             attrs['content_url'] = None

@@ -110,11 +110,6 @@ class Content(models.Model):
     )
     visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='enrolled')
     instructions = models.TextField(null=True, blank=True, help_text="Enunciado quando for um CHALLENGE")
-    technical_requirements = models.JSONField(
-        default=list,
-        blank=True,
-        help_text="Requisitos técnicos do CHALLENGE em uma lista de textos",
-    )
     language = models.CharField(
         max_length=50,
         null=True,
