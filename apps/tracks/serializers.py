@@ -23,6 +23,21 @@ class SkillSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class TrackSearchSerializer(serializers.ModelSerializer):
+    """Payload enxuto para a busca global (dropdown do cabeçalho).
+
+    Sem as anotações/contadores caros do TrackListSerializer — só o necessário
+    para exibir uma linha de resultado e navegar até /trilhas/{id}.
+    """
+
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    skills = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
+
+    class Meta:
+        model = Track
+        fields = ['id', 'title', 'level', 'level_display', 'skills']
+
+
 class ContentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Content
@@ -403,3 +418,50 @@ class ChallengeSubmissionSerializer(serializers.ModelSerializer):
             'submitted_at',
             'evaluated_at',
         ]
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user_track = attrs.get('user_track') or getattr(self.instance, 'user_track', None)
+        challenge = attrs.get('challenge') or getattr(self.instance, 'challenge', None)
+
+        if not request or not request.user.is_authenticated:
+            return attrs
+
+        if not user_track or str(user_track.user_id) != str(request.user.id):
+            raise serializers.ValidationError({
+                'user_track': 'A matrícula deve pertencer ao aluno autenticado.'
+            })
+
+        if user_track.status != 'IN_PROGRESS':
+            raise serializers.ValidationError({
+                'user_track': 'A matrícula não está em andamento.'
+            })
+
+        if not challenge or challenge.content_type != 'CHALLENGE':
+            raise serializers.ValidationError({
+                'challenge': 'O conteúdo informado não é um desafio.'
+            })
+
+        if challenge.module.track_id != user_track.track_id:
+            raise serializers.ValidationError({
+                'challenge': 'O desafio não pertence à trilha desta matrícula.'
+            })
+
+        previous_module = (
+            Module.objects.filter(
+                track=challenge.module.track,
+                display_order__lt=challenge.module.display_order,
+            )
+            .order_by('-display_order', '-created_at')
+            .first()
+        )
+        if previous_module and not UserModuleProgress.objects.filter(
+            user_track=user_track,
+            module=previous_module,
+            status='COMPLETED',
+        ).exists():
+            raise serializers.ValidationError({
+                'challenge': 'Conclua o módulo anterior antes de enviar este desafio.'
+            })
+
+        return attrs
