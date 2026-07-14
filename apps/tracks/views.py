@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
@@ -11,6 +13,7 @@ from .models import ChallengeSubmission, Content, Module, Skill, Track, UserCont
 from .permissions import IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
+    CompletedTrackSerializer,
     ContentSerializer,
     ModuleListSerializer,
     ModuleSerializer,
@@ -52,6 +55,16 @@ def _ensure_track_owner(track: Track, request) -> None:
     user_id = request.user.id
     if str(track.creator_id) != str(user_id):
         raise PermissionDenied("Apenas o criador da trilha pode executar esta ação.")
+
+
+def _parse_user_uuid(value):
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError, AttributeError):
+        raise ValidationError({
+            'user_uuid': 'Informe um UUID de usuário válido.'
+        }) from None
+
 
 class SkillViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
@@ -327,7 +340,15 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     def get_queryset(self):
         target_user_uuid = self.request.query_params.get('user_uuid')
         if target_user_uuid:
-            return UserTrack.objects.filter(user_id=target_user_uuid)
+            target_user_id = _parse_user_uuid(target_user_uuid)
+            is_own_user = str(target_user_id) == str(self.request.user.id)
+
+            if not is_own_user and self.request.user.role != 'TEACHER':
+                raise PermissionDenied(
+                    'Você não pode consultar as matrículas de outro aluno.'
+                )
+
+            return UserTrack.objects.filter(user_id=target_user_id)
 
         if self.request.user.is_authenticated:
             logged_user_id = self.request.user.id
@@ -338,6 +359,25 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     def perform_create(self, serializer):
         logged_user_id = self.request.user.id
         serializer.save(user_id=logged_user_id)
+
+    @action(detail=False, methods=['get'])
+    def completed(self, request):
+        """Trilhas concluídas que podem ser exibidas no perfil do aluno."""
+        target_user_id = _parse_user_uuid(
+            request.query_params.get('user_uuid') or request.user.id
+        )
+        queryset = (
+            UserTrack.objects.filter(
+                user_id=target_user_id,
+                status='COMPLETED',
+                track__status='PUBLISHED',
+            )
+            .select_related('track')
+            .order_by('-completed_at', 'track__title')
+        )
+
+        serializer = CompletedTrackSerializer(queryset, many=True)
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def me(self, request):

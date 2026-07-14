@@ -78,6 +78,7 @@ Documentação interativa disponível em:
 |--------|----------|-----------|
 | `GET`  | `/api/track/user-tracks/` | Lista matrículas |
 | `POST` | `/api/track/user-tracks/` | Matricula aluno em trilha publicada |
+| `GET`  | `/api/track/user-tracks/completed/?user_uuid={uuid}` | Lista pública e resumida das trilhas concluídas de um aluno |
 
 ## Regras de negócio
 

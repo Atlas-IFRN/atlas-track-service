@@ -381,6 +381,16 @@ class UserTrackSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class CompletedTrackSerializer(serializers.ModelSerializer):
+    track_id = serializers.UUIDField(source='track.id', read_only=True)
+    track_title = serializers.CharField(source='track.title', read_only=True)
+
+    class Meta:
+        model = UserTrack
+        fields = ['track_id', 'track_title', 'completed_at']
+        read_only_fields = fields
+
+
 class ChallengeSubmissionSerializer(serializers.ModelSerializer):
     class Meta:
         model = ChallengeSubmission
