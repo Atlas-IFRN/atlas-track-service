@@ -2,6 +2,7 @@ from uuid import UUID
 
 from django.db import transaction
 from django.db.models import Count, Q, Sum
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework import filters, pagination, viewsets
 from rest_framework.decorators import action
@@ -25,6 +26,7 @@ from .serializers import (
     UserTrackSerializer,
 )
 from .tasks import evaluate_challenge_submission
+from .services import complete_content, uncomplete_content
 
 
 NOT_FOUND_DETAIL = 'Não encontrado.'
@@ -312,6 +314,52 @@ class ContentViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
                 'module': 'Não é permitido mover um conteúdo para outro módulo.'
             })
         serializer.save()
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def complete(self, request, pk=None):
+        """Marca conteúdo comum como concluído para o aluno autenticado."""
+        content = self.get_object()
+        user_track = UserTrack.objects.filter(
+            user_id=request.user.id,
+            track=content.module.track,
+            status__in=['IN_PROGRESS', 'COMPLETED'],
+        ).first()
+        if not user_track:
+            raise NotFound('Você não está matriculado nesta trilha.')
+
+        try:
+            result = complete_content(user_track, content)
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, 'message_dict') else exc.messages
+            raise ValidationError(detail) from exc
+
+        return Response(result)
+
+    @action(
+        detail=True,
+        methods=['post'],
+        permission_classes=[IsAuthenticated],
+        url_path='uncomplete',
+    )
+    def uncomplete(self, request, pk=None):
+        """Desmarca conteúdo comum para o aluno autenticado."""
+        content = self.get_object()
+        user_track = UserTrack.objects.filter(
+            user_id=request.user.id,
+            track=content.module.track,
+            status__in=['IN_PROGRESS', 'COMPLETED'],
+        ).first()
+        if not user_track:
+            raise NotFound('Você não está matriculado nesta trilha.')
+
+        try:
+            result = uncomplete_content(user_track, content)
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, 'message_dict') else exc.messages
+            raise ValidationError(detail) from exc
+
+        return Response(result)
+
     @action(detail=True, methods=['post'])
     def reorder(self, request, pk=None):
         """Body: {"display_order": int}. Apenas o dono da trilha."""
@@ -419,16 +467,24 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         return Response(UserTrackSerializer(user_track, context={'request': request}).data)
 
 
-class UserModuleProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+class UserModuleProgressViewSet(TrackExceptionHandlerMixin, viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
-    queryset = UserModuleProgress.objects.all()
     serializer_class = UserModuleProgressSerializer
 
+    def get_queryset(self):
+        return UserModuleProgress.objects.filter(
+            user_track__user_id=self.request.user.id
+        )
 
-class UserContentProgressViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
+
+class UserContentProgressViewSet(TrackExceptionHandlerMixin, viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
-    queryset = UserContentProgress.objects.all()
     serializer_class = UserContentProgressSerializer
+
+    def get_queryset(self):
+        return UserContentProgress.objects.filter(
+            user_track__user_id=self.request.user.id
+        )
 
 
 class ChallengeSubmissionViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
@@ -457,6 +513,7 @@ class ChallengeSubmissionViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewS
         )
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def approve(self, request, pk=None):
         """Professor aprova manualmente uma submissão. Só o dono da trilha."""
         submission = self.get_object()
@@ -472,6 +529,17 @@ class ChallengeSubmissionViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewS
         if not submission.ai_feedback:
             submission.ai_feedback = "Aprovado manualmente pelo professor."
         submission.save()
+
+        try:
+            complete_content(
+                submission.user_track,
+                submission.challenge,
+                allow_challenge=True,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, 'message_dict') else exc.messages
+            raise ValidationError(detail) from exc
+
         return Response(ChallengeSubmissionSerializer(submission).data)
 
     @action(detail=False, methods=['get'], url_path='pending-review')
