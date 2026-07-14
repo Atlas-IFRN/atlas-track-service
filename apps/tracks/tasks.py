@@ -2,11 +2,13 @@ import logging
 
 import requests
 from celery import shared_task
+from django.core.exceptions import ValidationError
 from django.conf import settings
 from django.utils import timezone
 
 from .models import ChallengeSubmission
 from .notifications import send_notification
+from .services import complete_content
 
 logger = logging.getLogger(__name__)
 
@@ -115,29 +117,40 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
             evaluated_at=timezone.now(),
         )
         return {"status": "invalid_response", "submission_id": submission_id}
-    except ValueError as exc:
-        logger.exception("Resposta do ai-service não é JSON válido para submission %s", submission.pk)
-        ChallengeSubmission.objects.filter(pk=submission.pk).update(
-            ai_status='FAILED',
-            ai_feedback=f"Resposta inválida do serviço de IA: {exc}",
-            evaluated_at=timezone.now(),
-        )
-        return {"status": "invalid_response", "submission_id": submission_id}
 
+    score = data.get('score')
     ChallengeSubmission.objects.filter(pk=submission.pk).update(
         ai_status='EVALUATED',
-        ai_score=data.get('score'),
+        ai_score=score,
         ai_feedback=data.get('feedback') or '',
         ai_criteries=data.get('criteries') or [],
         evaluated_at=timezone.now(),
     )
 
-    score = data.get('score')
     send_notification(
         submission.user_track.user_id,
         "Desafio avaliado",
         f"O desafio '{challenge.title}' foi avaliado" + (f" — nota {score}." if score is not None else "."),
     )
+
+    try:
+        challenge_passed = score is not None and float(score) >= 70
+    except (TypeError, ValueError):
+        challenge_passed = False
+
+    if challenge_passed:
+        try:
+            complete_content(
+                submission.user_track,
+                submission.challenge,
+                allow_challenge=True,
+            )
+        except ValidationError as exc:
+            logger.warning(
+                "Desafio %s aprovado, mas o progresso não pôde avançar: %s",
+                submission.pk,
+                exc,
+            )
 
     logger.info("Submission %s avaliada com score=%s", submission.pk, score)
     return {

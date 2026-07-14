@@ -1,11 +1,80 @@
+import uuid
 from types import SimpleNamespace
 from uuid import uuid4
 
+from django.test import TestCase
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import Module, Track, UserTrack
+from .serializers import UserTrackSerializer
+from .services.progress import get_track_user_progress
+
+
+class UserTrackEnrollmentLimitTests(TestCase):
+    def setUp(self):
+        self.user_id = uuid.uuid4()
+        self.creator_id = uuid.uuid4()
+        self.request = SimpleNamespace(
+            user=SimpleNamespace(
+                id=self.user_id,
+                role='STUDENT',
+                is_authenticated=True,
+            )
+        )
+
+    def create_published_track(self, title):
+        track = Track.objects.create(
+            creator_id=self.creator_id,
+            title=title,
+            description='Descrição da trilha',
+        )
+        Track.objects.filter(pk=track.pk).update(status='PUBLISHED')
+        track.refresh_from_db()
+        return track
+
+    def test_blocks_fourth_in_progress_enrollment(self):
+        tracks = [self.create_published_track(f'Trilha {index}') for index in range(4)]
+        for track in tracks[:3]:
+            UserTrack.objects.create(user_id=self.user_id, track=track)
+
+        serializer = UserTrackSerializer(
+            data={'track': str(tracks[3].id)},
+            context={'request': self.request},
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('detail', serializer.errors)
+
+    def test_completed_enrollment_releases_one_slot(self):
+        tracks = [self.create_published_track(f'Trilha {index}') for index in range(4)]
+        enrollments = [
+            UserTrack.objects.create(user_id=self.user_id, track=track)
+            for track in tracks[:3]
+        ]
+        enrollments[0].status = 'COMPLETED'
+        enrollments[0].save(update_fields=['status'])
+
+        serializer = UserTrackSerializer(
+            data={'track': str(tracks[3].id)},
+            context={'request': self.request},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_completed_status_is_exposed_in_track_progress(self):
+        track = self.create_published_track('Trilha concluída')
+        UserTrack.objects.create(
+            user_id=self.user_id,
+            track=track,
+            status='COMPLETED',
+        )
+
+        progress = get_track_user_progress(track, self.user_id, role='STUDENT')
+
+        self.assertTrue(progress['enrolled'])
+        self.assertEqual(progress['status'], 'COMPLETED')
 
 
 class CompletedTracksApiTests(APITestCase):

@@ -1,3 +1,3 @@
-from .progress import get_track_user_progress
+from .progress import complete_content, get_track_user_progress, uncomplete_content
 
-__all__ = ['get_track_user_progress']
+__all__ = ['complete_content', 'get_track_user_progress', 'uncomplete_content']
