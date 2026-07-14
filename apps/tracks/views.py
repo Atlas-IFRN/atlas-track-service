@@ -20,6 +20,7 @@ from .serializers import (
     ModuleSerializer,
     SkillSerializer,
     TrackListSerializer,
+    TrackSearchSerializer,
     TrackSerializer,
     UserContentProgressSerializer,
     UserModuleProgressSerializer,
@@ -127,6 +128,22 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         if self.action == 'list':
             return TrackListSerializer
         return TrackSerializer
+
+    @action(detail=False, methods=['get'], url_path='search')
+    def search(self, request):
+        """Busca compacta de trilhas para a busca global do cabeçalho.
+
+        Reaproveita o SearchFilter (search_fields) e a paginação da viewset, mas
+        com um queryset leve (sem os contadores caros de get_queryset) e um
+        serializer enxuto. Respeita a visibilidade: não-docente só vê PUBLISHED.
+        """
+        queryset = Track.objects.prefetch_related('skills').order_by('-created_at')
+        if request.user.role != 'TEACHER':
+            queryset = queryset.filter(status='PUBLISHED')
+        queryset = self.filter_queryset(queryset)
+        page = self.paginate_queryset(queryset)
+        serializer = TrackSearchSerializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
 
     def perform_create(self, serializer):
         logged_user_id = self.request.user.id
