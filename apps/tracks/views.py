@@ -221,6 +221,19 @@ class ModuleViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
             return ModuleListSerializer
         return ModuleSerializer
 
+    def perform_create(self, serializer):
+        track = serializer.validated_data['track']
+        _ensure_track_owner(track, self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        requested_track = serializer.validated_data.get('track')
+        if requested_track and requested_track.pk != serializer.instance.track_id:
+            raise ValidationError({
+                'track': 'Não é permitido mover um módulo para outra trilha.'
+            })
+        serializer.save()
+
     @action(detail=True, methods=['post'])
     def reorder(self, request, pk=None):
         """Body: {"display_order": int}. Apenas o dono da trilha."""
@@ -274,6 +287,18 @@ class ContentViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
 
         return queryset
 
+    def perform_create(self, serializer):
+        module = serializer.validated_data['module']
+        _ensure_track_owner(module.track, self.request)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        requested_module = serializer.validated_data.get('module')
+        if requested_module and requested_module.pk != serializer.instance.module_id:
+            raise ValidationError({
+                'module': 'Não é permitido mover um conteúdo para outro módulo.'
+            })
+        serializer.save()
     @action(detail=True, methods=['post'])
     def reorder(self, request, pk=None):
         """Body: {"display_order": int}. Apenas o dono da trilha."""

@@ -90,7 +90,6 @@ class Content(models.Model):
     CONTENT_TYPE_CHOICES = [
         ('VIDEO', 'Vídeo'),
         ('ARTICLE', 'Artigo'),
-        ('REPOSITORY', 'Repositório'),
         ('CHALLENGE', 'Desafio'),
     ]
     VISIBILITY_CHOICES = [
@@ -103,7 +102,12 @@ class Content(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
     content_type = models.CharField(max_length=20, choices=CONTENT_TYPE_CHOICES)
-    content_url = models.URLField(null=True, blank=True, help_text="URL para VIDEO, ARTICLE ou REPOSITORY")
+    content_url = models.URLField(null=True, blank=True, help_text="URL do vídeo")
+    content = models.TextField(
+        blank=True,
+        default='',
+        help_text="Corpo em Markdown quando o tipo for ARTICLE",
+    )
     visibility = models.CharField(max_length=20, choices=VISIBILITY_CHOICES, default='enrolled')
     instructions = models.TextField(null=True, blank=True, help_text="Enunciado quando for um CHALLENGE")
     language = models.CharField(

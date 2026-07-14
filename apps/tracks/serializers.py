@@ -28,6 +28,16 @@ class ContentSerializer(serializers.ModelSerializer):
         model = Content
         fields = '__all__'
 
+    def validate(self, attrs):
+        content_type = attrs.get(
+            'content_type',
+            getattr(self.instance, 'content_type', None),
+        )
+
+        if content_type == 'ARTICLE':
+            attrs['content_url'] = None
+        return attrs
+
 
 class ModuleListSerializer(serializers.ModelSerializer):
     contents_count = serializers.IntegerField(read_only=True)
