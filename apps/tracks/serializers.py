@@ -23,6 +23,21 @@ class SkillSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
+class TrackSearchSerializer(serializers.ModelSerializer):
+    """Payload enxuto para a busca global (dropdown do cabeçalho).
+
+    Sem as anotações/contadores caros do TrackListSerializer — só o necessário
+    para exibir uma linha de resultado e navegar até /trilhas/{id}.
+    """
+
+    level_display = serializers.CharField(source='get_level_display', read_only=True)
+    skills = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
+
+    class Meta:
+        model = Track
+        fields = ['id', 'title', 'level', 'level_display', 'skills']
+
+
 class ContentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Content
