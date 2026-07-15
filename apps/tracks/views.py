@@ -22,7 +22,7 @@ from .models import (
     UserModuleProgress,
     UserTrack,
 )
-from .permissions import IsTeacherOrReadOnly
+from .permissions import IsTeacher, IsTeacherOrReadOnly
 from .serializers import (
     AuditLogSerializer,
     ChallengeSubmissionSerializer,
@@ -65,7 +65,7 @@ class AuditLogPagination(pagination.PageNumberPagination):
 class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
     """Histórico global de operações registradas neste microsserviço."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsTeacher]
     serializer_class = AuditLogSerializer
     pagination_class = AuditLogPagination
 

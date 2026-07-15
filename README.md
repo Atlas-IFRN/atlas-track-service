@@ -1,121 +1,88 @@
-# Tracks Service 🛤️
+# Atlas · Tracks Service 🛤️
 
-Microserviço do ecossistema **Atlas** responsável pelo gerenciamento de trilhas de aprendizado. Fornece modelos, endpoints e lógica de domínio para criação, atualização e consulta de trilhas, módulos, conteúdos e matrículas de alunos.
+> Parte do **Projeto Atlas** — plataforma acadêmica desenvolvida para o **IFRN Campus Pau dos Ferros** como Projeto Integrador de Sistemas Distribuídos. O Atlas conecta alunos a trilhas de conhecimento e bolsas, com avaliação automática de código por IA.
+
+Microsserviço responsável pelas **trilhas de aprendizado**: criação e organização de trilhas, módulos e conteúdos, acompanhamento de progresso do aluno e **submissão de desafios** com avaliação automática por IA.
+
+## O que este serviço faz
+
+- **Catálogo de trilhas:** trilhas com categorias, níveis e habilidades (`Skill`), organizadas em módulos e conteúdos.
+- **Progresso do aluno:** matrícula em trilhas (`UserTrack`) e progresso por módulo e por conteúdo.
+- **Desafios de código:** o aluno envia um repositório GitHub em uma `ChallengeSubmission`; uma **task Celery assíncrona** encaminha o desafio ao **ai-service** (`/analyze`) e persiste o score e o feedback de volta na submissão.
+- **Notificações:** dispara eventos de notificação (ex.: resultado da avaliação) via RabbitMQ.
+- **Auditoria:** modelo `AuditLog` com registro automático de operações e endpoint de consulta.
 
 ## Stack
 
-- Python 3.11 · Django · Django REST Framework
-- PostgreSQL · Redis · RabbitMQ + Celery
-- Docker
+- Python · Django · Django REST Framework
+- PostgreSQL 16 (schema `tracks`) · Redis · RabbitMQ + Celery
+- Gunicorn · Docker · drf-spectacular (Swagger)
+
+## Como se encaixa no Atlas
+
+| Repositório | Responsabilidade |
+|---|---|
+| atlas-auth-service | Identidade: SUAP OAuth2, JWT, perfis de usuário |
+| **atlas-track-service** | **Trilhas, módulos, conteúdos, progresso e submissão de desafios** |
+| atlas-scholarship-service | Bolsas, candidaturas, banco de talentos e notas |
+| atlas-feed-service | Feed institucional: posts, comentários, curtidas e banners |
+| atlas-notification-service | Notificações (consumidor central via RabbitMQ) |
+| atlas-ai-service | Avaliação de repositórios GitHub por LLM local (Ollama) |
+| atlas-frontend | SPA React + TypeScript (aluno e professor) |
+| atlas-infra | Docker Compose, Nginx (gateway), Postgres/Redis/RabbitMQ, deploy e backup |
+| atlas-observability | Prometheus + Grafana (métricas dos serviços) |
+
+**Autenticação:** o Nginx valida o JWT na borda e injeta `X-User-Id` / `X-User-Role`; o serviço também valida o token localmente (`AtlasJWTAuthentication`, SimpleJWT *stateless*) para ler os claims do usuário. Nenhum serviço acessa o schema do outro — dados cruzados passam pela API HTTP interna.
+
+**Avaliação de desafios:** a submissão roda em um **worker Celery dedicado** (`celery-worker-tracks`, fila `tracks`), mantendo o request do aluno rápido enquanto a análise por IA acontece em segundo plano.
+
+## Domínio (models principais)
+
+`TrackCategory` · `Skill` · `Track` · `Module` · `Content` · `UserTrack` · `UserModuleProgress` · `UserContentProgress` · `ChallengeSubmission` · `AuditLog`
+
+## Principais endpoints (`/api/track/`)
+
+Router DRF: `categories/` · `skills/` · `tracks/` (+ `tracks/search/`) · `modules/` · `contents/` · `user-tracks/` · `module-progress/` · `content-progress/` · `submissions/` · `audit-logs/`. Documentação em `api/track/docs/`.
 
 ## Estrutura
 
-- `apps/tracks/` — models, views, serializers, services, tasks
-- `config/settings/` — settings modularizados por ambiente
+```
+apps/tracks/   models, views (ViewSets), serializers, services (regra de negócio),
+               tasks (Celery), authentication, notifications, tests
+config/        settings (base/local/production), urls, celery, asgi, wsgi
+```
 
-> ![DER](docs/der-inicial-tracks.png)
+> Views chamam a camada `services/`; a lógica de negócio não acessa o `request` diretamente.
 
 ## Executando localmente
 
-Este serviço é orquestrado junto com todos os outros pelo repositório central de infraestrutura:
-
-> **[Atlas-IFRN/atlas-infra](https://github.com/Atlas-IFRN/atlas-infra)** — Docker Compose canônico, Nginx, scripts de deploy e backup.
-
-Para subir apenas a infraestrutura compartilhada (Postgres, Redis, RabbitMQ) e rodar este serviço isolado em modo dev:
+> Orquestrado pelo repositório central: **[Atlas-IFRN/atlas-infra](https://github.com/Atlas-IFRN/atlas-infra)**.
 
 ```bash
-# 1. Suba a infra compartilhada
+# 1. Infra compartilhada
 git clone https://github.com/Atlas-IFRN/atlas-infra
-cd atlas-infra
-docker compose -f docker-compose.dev.yml up -d
+cd atlas-infra && docker compose -f docker-compose.dev.yml up -d
 
 # 2. Neste repositório
 cp .env.example .env
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
 python manage.py migrate
-python manage.py runserver 8001
+python manage.py runserver 8000
 
-# 3. (Opcional) Worker Celery
+# 3. Worker Celery (avaliação de desafios)
 celery -A config worker -l info -Q tracks
 ```
 
 ## Variáveis de ambiente
 
-Veja `.env.example`. Principais: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `AUTH_SERVICE_URL`, `INTERNAL_TOKEN`.
+Baseie seu `.env` no `.env.example`. Principais: `DJANGO_SECRET_KEY` (compartilhada — valida o JWT), `DATABASE_URL`, `REDIS_URL`, `CELERY_BROKER_URL`, `AI_SERVICE_URL`, `AI_SERVICE_TIMEOUT`, `AUTH_SERVICE_URL`.
 
-## Endpoints
+## Observabilidade & Auditoria
 
-Documentação interativa disponível em:
-- **Swagger UI:** `http://localhost:8000/api/track/docs/`
-- **JSON Schema:** `http://localhost:8000/api/track/schema/`
+- **Métricas:** `/metrics` (django-prometheus), coletado pelo [atlas-observability](https://github.com/Atlas-IFRN/atlas-observability).
+- **Auditoria:** `AuditLog` registra operações com `user_id` e timestamp (via signals), consultáveis em `audit-logs/`.
 
-### Trilhas (`/api/track/tracks/`)
+## CI/CD
 
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/track/tracks/` | Lista trilhas com `modules_count` agregado |
-| `POST` | `/api/track/tracks/` | Cria trilha (TEACHER) |
-| `GET`  | `/api/track/tracks/{id}/` | Detalhe com árvore completa de módulos e conteúdos |
-| `PUT/PATCH` | `/api/track/tracks/{id}/` | Atualiza trilha (TEACHER) |
-| `DELETE` | `/api/track/tracks/{id}/` | Remove trilha (TEACHER) |
-
-O campo `category_id` é obrigatório na criação. As respostas incluem a
-categoria completa e cada skill inclui sua categoria semântica.
-
-### Categorias de trilha (`/api/track/categories/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET` | `/api/track/categories/` | Lista categorias ativas na ordem de exibição |
-| `GET` | `/api/track/categories/{id}/` | Retorna uma categoria ativa |
-
-As categorias são administradas pelo Django Admin. O `slug` funciona como a
-chave estável usada pelo design system para selecionar tema, gradiente e ícone.
-
-### Módulos (`/api/track/modules/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/track/modules/?track_id=UUID` | Módulos de uma trilha com `contents_count` |
-| `GET`  | `/api/track/modules/{id}/` | Módulo com conteúdos aninhados |
-
-### Conteúdos (`/api/track/contents/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/track/contents/?module_id=UUID` | Conteúdos de um módulo |
-| `GET`  | `/api/track/contents/{id}/` | Conteúdo individual |
-
-### Matrículas (`/api/track/user-tracks/`)
-
-| Método | Endpoint | Descrição |
-|--------|----------|-----------|
-| `GET`  | `/api/track/user-tracks/` | Lista matrículas |
-| `POST` | `/api/track/user-tracks/` | Matricula aluno em trilha publicada |
-| `GET`  | `/api/track/user-tracks/completed/?user_uuid={uuid}` | Lista pública e resumida das trilhas concluídas de um aluno |
-
-## Regras de negócio
-
-- Apenas trilhas com `status=PUBLISHED` aceitam matrículas
-- Aluno pode ter no máximo **3 trilhas em andamento** simultaneamente
-- Professor não pode se matricular em trilhas
-- Trilha não pode ser publicada sem ao menos um módulo
-- Exclusão bloqueada se houver matrículas `IN_PROGRESS`
-
-## Permissões
-
-`IsTeacherOrReadOnly` — lê a role diretamente do header `X-User-Role` injetado pelo Nginx.
-
-## Testes
-
-```bash
-python manage.py test
-python manage.py test apps.tracks   # só a app de trilhas
-```
-
-## Qualidade de código
-
-```bash
-pip install pre-commit && pre-commit install
-pre-commit run --all-files
-```
-
+Workflows de GitHub Actions em `.github/workflows/`.
