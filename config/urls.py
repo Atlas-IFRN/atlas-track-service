@@ -12,6 +12,9 @@ urlpatterns = [
     path('api/track/admin/', admin.site.urls),
     path('health/', health_check),
 
+    # Endpoint /metrics para o Prometheus (django-prometheus).
+    path('', include('django_prometheus.urls')),
+
     path('api/track/', include('apps.tracks.urls')),
 
     path('api/track/schema/', SpectacularAPIView.as_view(), name='schema'),
