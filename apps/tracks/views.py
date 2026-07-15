@@ -466,6 +466,52 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
             })
         return Response(results)
 
+    @action(detail=False, methods=['get'])
+    def top(self, request):
+        """Trilhas em que o usuário está MAIS AVANÇADO — widget "MINHAS TRILHAS".
+
+        Lista as trilhas matriculadas (em andamento ou concluídas, publicadas),
+        ordenadas por progresso decrescente e limitadas a `limit` (padrão 3).
+        Aceita `user_uuid` para ver as trilhas de outro usuário (perfil de
+        terceiros); sem ele, usa o usuário logado. Professores não se matriculam,
+        então o resultado é naturalmente vazio para o perfil de um docente.
+        """
+        target_user_id = _parse_user_uuid(
+            request.query_params.get('user_uuid') or request.user.id
+        )
+
+        try:
+            limit = int(request.query_params.get('limit', 3))
+        except (TypeError, ValueError):
+            limit = 3
+        limit = max(1, min(limit, 10))
+
+        queryset = (
+            UserTrack.objects.filter(
+                user_id=target_user_id,
+                status__in=['IN_PROGRESS', 'COMPLETED'],
+                track__status='PUBLISHED',
+            )
+            .select_related('track')
+        )
+
+        results = []
+        for ut in queryset:
+            total_modules = ut.track.modules.count()
+            completed_modules = ut.module_progress.filter(status='COMPLETED').count()
+            progress_pct = (completed_modules / total_modules * 100) if total_modules else 0
+            results.append({
+                'track_id': str(ut.track.id),
+                'track_title': ut.track.title,
+                'status': ut.status,
+                'completed_modules': completed_modules,
+                'total_modules': total_modules,
+                'progress_pct': round(progress_pct, 2),
+            })
+
+        results.sort(key=lambda item: item['progress_pct'], reverse=True)
+        return Response(results[:limit])
+
     @action(detail=True, methods=['post'])
     def drop(self, request, pk=None):
         """Aluno desiste de uma trilha (status → DROPPED). Só o próprio aluno."""
