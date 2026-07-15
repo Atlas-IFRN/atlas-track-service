@@ -74,6 +74,69 @@ class UserTrackEnrollmentLimitTests(TestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_reenrollment_reactivates_dropped_record_and_preserves_progress(self):
+        track = self.create_published_track('Trilha abandonada')
+        module = Module.objects.create(
+            track=track,
+            title='Módulo inicial',
+            description='Primeiro módulo',
+            display_order=1,
+        )
+        content = Content.objects.create(
+            module=module,
+            title='Conteúdo concluído',
+            description='Conteúdo preservado',
+            content_type='ARTICLE',
+            display_order=1,
+        )
+        enrollment = UserTrack.objects.create(
+            user_id=self.user_id,
+            track=track,
+        )
+        progress = UserContentProgress.objects.create(
+            user_track=enrollment,
+            content=content,
+            status='COMPLETED',
+        )
+        original_enrolled_at = enrollment.enrolled_at
+        enrollment.status = 'DROPPED'
+        enrollment.save(update_fields=['status'])
+
+        serializer = UserTrackSerializer(
+            data={'track': str(track.id)},
+            context={'request': self.request},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        reactivated = serializer.save(user_id=self.user_id)
+
+        self.assertEqual(reactivated.id, enrollment.id)
+        self.assertEqual(reactivated.status, 'IN_PROGRESS')
+        self.assertGreaterEqual(reactivated.enrolled_at, original_enrolled_at)
+        self.assertTrue(
+            UserContentProgress.objects.filter(pk=progress.pk).exists()
+        )
+        self.assertEqual(
+            UserTrack.objects.filter(user_id=self.user_id, track=track).count(),
+            1,
+        )
+
+    def test_dropped_enrollment_releases_one_slot(self):
+        tracks = [self.create_published_track(f'Trilha {index}') for index in range(4)]
+        enrollments = [
+            UserTrack.objects.create(user_id=self.user_id, track=track)
+            for track in tracks[:3]
+        ]
+        enrollments[0].status = 'DROPPED'
+        enrollments[0].save(update_fields=['status'])
+
+        serializer = UserTrackSerializer(
+            data={'track': str(tracks[3].id)},
+            context={'request': self.request},
+        )
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
     def test_completed_status_is_exposed_in_track_progress(self):
         track = self.create_published_track('Trilha concluída')
         UserTrack.objects.create(
@@ -85,6 +148,7 @@ class UserTrackEnrollmentLimitTests(TestCase):
         progress = get_track_user_progress(track, self.user_id, role='STUDENT')
 
         self.assertTrue(progress['enrolled'])
+        self.assertIsNotNone(progress['enrollment_id'])
         self.assertEqual(progress['status'], 'COMPLETED')
 
     def test_progress_uses_current_contents_instead_of_stale_module_status(self):
@@ -246,6 +310,95 @@ class CompletedTracksApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class UserTrackLifecycleApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.student_id = uuid4()
+        cls.other_student_id = uuid4()
+        cls.teacher_id = uuid4()
+        cls.category = TrackCategory.objects.get(slug='backend')
+        cls.track = Track.objects.create(
+            creator_id=cls.teacher_id,
+            category=cls.category,
+            title='Trilha com abandono',
+            description='Trilha publicada para testar o ciclo da matrícula.',
+        )
+        Track.objects.filter(pk=cls.track.pk).update(status='PUBLISHED')
+        cls.track.refresh_from_db()
+
+    def authenticate(self, user_id=None):
+        self.client.force_authenticate(
+            user=SimpleNamespace(
+                id=user_id or self.student_id,
+                role='STUDENT',
+                is_authenticated=True,
+            )
+        )
+
+    def test_student_can_drop_and_reenroll_in_same_track(self):
+        self.authenticate()
+        enrollment = UserTrack.objects.create(
+            user_id=self.student_id,
+            track=self.track,
+        )
+
+        drop_response = self.client.post(
+            f'/api/track/user-tracks/{enrollment.id}/drop/',
+        )
+
+        self.assertEqual(drop_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(drop_response.data['status'], 'DROPPED')
+
+        reenroll_response = self.client.post(
+            '/api/track/user-tracks/',
+            {'track': str(self.track.id)},
+            format='json',
+        )
+
+        self.assertEqual(reenroll_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(reenroll_response.data['id'], str(enrollment.id))
+        self.assertEqual(reenroll_response.data['status'], 'IN_PROGRESS')
+        self.assertEqual(
+            UserTrack.objects.filter(
+                user_id=self.student_id,
+                track=self.track,
+            ).count(),
+            1,
+        )
+
+    def test_student_cannot_drop_completed_track(self):
+        self.authenticate()
+        enrollment = UserTrack.objects.create(
+            user_id=self.student_id,
+            track=self.track,
+            status='COMPLETED',
+            completed_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            f'/api/track/user-tracks/{enrollment.id}/drop/',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, 'COMPLETED')
+
+    def test_student_cannot_drop_another_students_enrollment(self):
+        self.authenticate()
+        enrollment = UserTrack.objects.create(
+            user_id=self.other_student_id,
+            track=self.track,
+        )
+
+        response = self.client.post(
+            f'/api/track/user-tracks/{enrollment.id}/drop/',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, 'IN_PROGRESS')
 
 
 class TrackCategoryApiTests(APITestCase):

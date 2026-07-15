@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -424,6 +425,12 @@ class UserTrackSerializer(serializers.ModelSerializer):
             user_id = request.user.id
             user_role = request.user.role
 
+            track = attrs.get('track')
+            if not self.instance and track and track.status != 'PUBLISHED':
+                raise serializers.ValidationError(
+                    {"track": "Inscrição bloqueada. A trilha deve estar publicada."}
+                )
+
             # PERMISSÃO: Professor não pode se matricular
             if user_role == 'TEACHER':
                 raise serializers.ValidationError({"detail": "Professores não podem se matricular em trilhas."})
@@ -441,6 +448,33 @@ class UserTrackSerializer(serializers.ModelSerializer):
                     )
 
         return attrs
+
+    def create(self, validated_data):
+        """Cria uma matrícula ou reativa uma inscrição abandonada.
+
+        ``UserTrack`` é único por aluno e trilha. Reutilizar o registro com
+        status ``DROPPED`` permite que o aluno volte à trilha sem apagar o
+        progresso que ele já havia alcançado.
+        """
+        user_id = validated_data['user_id']
+        track = validated_data['track']
+
+        with transaction.atomic():
+            dropped_enrollment = (
+                UserTrack.objects.select_for_update()
+                .filter(user_id=user_id, track=track, status='DROPPED')
+                .first()
+            )
+            if dropped_enrollment:
+                dropped_enrollment.status = 'IN_PROGRESS'
+                dropped_enrollment.enrolled_at = timezone.now()
+                dropped_enrollment.completed_at = None
+                dropped_enrollment.save(
+                    update_fields=['status', 'enrolled_at', 'completed_at']
+                )
+                return dropped_enrollment
+
+            return super().create(validated_data)
 
 
 class CompletedTrackSerializer(serializers.ModelSerializer):
