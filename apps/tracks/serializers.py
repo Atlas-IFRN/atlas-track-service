@@ -9,6 +9,7 @@ from .models import (
     Module,
     Skill,
     Track,
+    TrackCategory,
     UserContentProgress,
     UserModuleProgress,
     UserTrack,
@@ -16,10 +17,29 @@ from .models import (
 from .services import get_track_user_progress
 
 
+class TrackCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TrackCategory
+        fields = ['id', 'name', 'slug', 'is_active', 'display_order']
+        read_only_fields = fields
+
+
 class SkillSerializer(serializers.ModelSerializer):
+    category_display = serializers.CharField(
+        source='get_category_display',
+        read_only=True,
+    )
+
     class Meta:
         model = Skill
-        fields = ['id', 'name', 'slug', 'created_at']
+        fields = [
+            'id',
+            'name',
+            'slug',
+            'category',
+            'category_display',
+            'created_at',
+        ]
         read_only_fields = ['id', 'created_at']
 
 
@@ -32,10 +52,11 @@ class TrackSearchSerializer(serializers.ModelSerializer):
 
     level_display = serializers.CharField(source='get_level_display', read_only=True)
     skills = serializers.SlugRelatedField(slug_field='name', many=True, read_only=True)
+    category = TrackCategorySerializer(read_only=True)
 
     class Meta:
         model = Track
-        fields = ['id', 'title', 'level', 'level_display', 'skills']
+        fields = ['id', 'title', 'category', 'level', 'level_display', 'skills']
 
 
 class ContentSerializer(serializers.ModelSerializer):
@@ -145,6 +166,7 @@ def _serialize_latest_evaluation(track, request):
 
 
 class TrackListSerializer(serializers.ModelSerializer):
+    category = TrackCategorySerializer(read_only=True)
     skills = SkillSerializer(many=True, read_only=True)
     level_display = serializers.CharField(source='get_level_display', read_only=True)
     modules_count = serializers.SerializerMethodField()
@@ -160,6 +182,7 @@ class TrackListSerializer(serializers.ModelSerializer):
             'id',
             'title',
             'description',
+            'category',
             'level',
             'level_display',
             'duration_weeks',
@@ -228,6 +251,12 @@ class ModuleSerializer(serializers.ModelSerializer):
 
 class TrackSerializer(serializers.ModelSerializer):
     modules = serializers.SerializerMethodField()
+    category = TrackCategorySerializer(read_only=True)
+    category_id = serializers.PrimaryKeyRelatedField(
+        queryset=TrackCategory.objects.filter(is_active=True),
+        source='category',
+        write_only=True,
+    )
     skills = SkillSerializer(many=True, read_only=True)
     skill_ids = serializers.PrimaryKeyRelatedField(
         many=True,
@@ -251,6 +280,8 @@ class TrackSerializer(serializers.ModelSerializer):
             'creator_id',
             'title',
             'description',
+            'category',
+            'category_id',
             'level',
             'level_display',
             'duration_weeks',

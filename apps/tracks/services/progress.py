@@ -30,6 +30,41 @@ def _calculate_percentage(completed, total):
     ).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
+def get_user_track_progress_summary(user_track):
+    """Calcula o progresso atual usando os conteúdos que existem na trilha.
+
+    Os registros agregados de ``UserModuleProgress`` podem ficar defasados
+    quando um professor adiciona conteúdo a um módulo já concluído. Esta
+    leitura usa a fonte granular (``UserContentProgress``), sem alterar dados.
+    """
+    modules = list(user_track.track.modules.all())
+    completed_content_ids = set(
+        user_track.content_progress.filter(
+            status='COMPLETED',
+            content__module__track=user_track.track,
+        ).values_list('content_id', flat=True)
+    )
+
+    total_contents = 0
+    completed_modules = 0
+    for module in modules:
+        content_ids = [content.id for content in module.contents.all()]
+        total_contents += len(content_ids)
+        if content_ids and all(
+            content_id in completed_content_ids for content_id in content_ids
+        ):
+            completed_modules += 1
+
+    return {
+        'completed_modules': completed_modules,
+        'total_modules': len(modules),
+        'completed_content_ids': list(completed_content_ids),
+        'percentage': float(
+            _calculate_percentage(len(completed_content_ids), total_contents)
+        ),
+    }
+
+
 def get_track_user_progress(track, user_id, role=None):
     if role == 'TEACHER':
         return None
@@ -45,21 +80,14 @@ def get_track_user_progress(track, user_id, role=None):
     if not user_track:
         return NOT_ENROLLED_PROGRESS.copy()
 
-    total_contents = Content.objects.filter(module__track=track).count()
-    completed_modules = user_track.module_progress.filter(status='COMPLETED').count()
-    completed_content_ids = list(
-        user_track.content_progress.filter(status='COMPLETED').values_list(
-            'content_id', flat=True
-        )
-    )
-    percentage = _calculate_percentage(len(completed_content_ids), total_contents)
+    summary = get_user_track_progress_summary(user_track)
 
     return {
         'enrolled': True,
         'status': user_track.status,
-        'completed_modules': completed_modules,
-        'completed_content_ids': completed_content_ids,
-        'percentage': float(percentage),
+        'completed_modules': summary['completed_modules'],
+        'completed_content_ids': summary['completed_content_ids'],
+        'percentage': summary['percentage'],
     }
 
 

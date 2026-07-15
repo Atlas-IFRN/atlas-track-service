@@ -10,7 +10,17 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ChallengeSubmission, Content, Module, Skill, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .models import (
+    ChallengeSubmission,
+    Content,
+    Module,
+    Skill,
+    Track,
+    TrackCategory,
+    UserContentProgress,
+    UserModuleProgress,
+    UserTrack,
+)
 from .permissions import IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
@@ -19,6 +29,7 @@ from .serializers import (
     ModuleListSerializer,
     ModuleSerializer,
     SkillSerializer,
+    TrackCategorySerializer,
     TrackListSerializer,
     TrackSearchSerializer,
     TrackSerializer,
@@ -27,7 +38,11 @@ from .serializers import (
     UserTrackSerializer,
 )
 from .tasks import evaluate_challenge_submission
-from .services import complete_content, uncomplete_content
+from .services import (
+    complete_content,
+    get_user_track_progress_summary,
+    uncomplete_content,
+)
 
 
 NOT_FOUND_DETAIL = 'Não encontrado.'
@@ -69,13 +84,26 @@ def _parse_user_uuid(value):
         }) from None
 
 
+class TrackCategoryViewSet(
+    TrackExceptionHandlerMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TrackCategorySerializer
+    queryset = TrackCategory.objects.filter(is_active=True)
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'slug']
+    ordering_fields = ['display_order', 'name']
+    ordering = ['display_order', 'name']
+
+
 class SkillViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['name', 'slug']
-    ordering_fields = ['name', 'created_at']
+    search_fields = ['name', 'slug', 'category']
+    ordering_fields = ['name', 'category', 'created_at']
     ordering = ['name']
 
 
@@ -83,13 +111,21 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     pagination_class = TrackPageNumberPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'description', 'skills__name', 'skills__slug']
-    ordering_fields = ['title', 'created_at', 'duration_weeks', 'level']
+    search_fields = [
+        'title',
+        'description',
+        'category__name',
+        'category__slug',
+        'skills__name',
+        'skills__slug',
+    ]
+    ordering_fields = ['title', 'category__name', 'created_at', 'duration_weeks', 'level']
     ordering = ['-created_at']
 
     def get_queryset(self):
         queryset = (
-            Track.objects.prefetch_related('skills', 'modules__contents')
+            Track.objects.select_related('category')
+            .prefetch_related('skills', 'modules__contents')
             .annotate(
                 modules_count=Count('modules', distinct=True),
                 total_duration_minutes=Sum('modules__contents__duration_minutes'),
@@ -114,6 +150,10 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         if level:
             queryset = queryset.filter(level=level)
 
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category__slug=category)
+
         skills = self.request.query_params.get('skills') or self.request.query_params.get('skill')
         if skills:
             skill_values = [value.strip() for value in skills.split(',') if value.strip()]
@@ -137,7 +177,11 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         com um queryset leve (sem os contadores caros de get_queryset) e um
         serializer enxuto. Respeita a visibilidade: não-docente só vê PUBLISHED.
         """
-        queryset = Track.objects.prefetch_related('skills').order_by('-created_at')
+        queryset = (
+            Track.objects.select_related('category')
+            .prefetch_related('skills')
+            .order_by('-created_at')
+        )
         if request.user.role != 'TEACHER':
             queryset = queryset.filter(status='PUBLISHED')
         queryset = self.filter_queryset(queryset)
@@ -205,16 +249,14 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         track = self.get_object()
         _ensure_track_owner(track, request)
 
-        total_modules = track.modules.count()
         results = []
-        for ut in track.enrollments.all().prefetch_related('module_progress'):
-            completed = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed / total_modules * 100) if total_modules else 0
+        for ut in track.enrollments.select_related('track').all():
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'user_track_id': str(ut.id),
                 'user_id': str(ut.user_id),
                 'status': ut.status,
-                'progress_pct': round(progress_pct, 2),
+                'progress_pct': summary['percentage'],
                 'enrolled_at': ut.enrolled_at,
                 'completed_at': ut.completed_at,
             })
@@ -448,19 +490,21 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     def me(self, request):
         """Trilhas do aluno atual com progresso agregado."""
         user_id = request.user.id
-        queryset = UserTrack.objects.filter(user_id=user_id).select_related('track')
+        queryset = (
+            UserTrack.objects.filter(user_id=user_id)
+            .select_related('track')
+            .prefetch_related('track__modules__contents')
+        )
 
         results = []
         for ut in queryset:
-            total_modules = ut.track.modules.count()
-            completed = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed / total_modules * 100) if total_modules else 0
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'id': str(ut.id),
                 'track_id': str(ut.track.id),
                 'track_title': ut.track.title,
                 'status': ut.status,
-                'progress_pct': round(progress_pct, 2),
+                'progress_pct': summary['percentage'],
                 'enrolled_at': ut.enrolled_at,
                 'completed_at': ut.completed_at,
             })
@@ -493,20 +537,19 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
                 track__status='PUBLISHED',
             )
             .select_related('track')
+            .prefetch_related('track__modules__contents')
         )
 
         results = []
         for ut in queryset:
-            total_modules = ut.track.modules.count()
-            completed_modules = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed_modules / total_modules * 100) if total_modules else 0
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'track_id': str(ut.track.id),
                 'track_title': ut.track.title,
                 'status': ut.status,
-                'completed_modules': completed_modules,
-                'total_modules': total_modules,
-                'progress_pct': round(progress_pct, 2),
+                'completed_modules': summary['completed_modules'],
+                'total_modules': summary['total_modules'],
+                'progress_pct': summary['percentage'],
             })
 
         results.sort(key=lambda item: item['progress_pct'], reverse=True)

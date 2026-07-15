@@ -7,10 +7,40 @@ from django.utils.translation import gettext_lazy as _
 # Create your models here.
 
 
+class SkillCategory(models.TextChoices):
+    LANGUAGE = 'LANGUAGE', _('Linguagem')
+    FRAMEWORK = 'FRAMEWORK', _('Framework')
+    DATABASE = 'DATABASE', _('Banco de dados')
+    DATA_AI = 'DATA_AI', _('Dados e IA')
+    INFRA = 'INFRA', _('Infraestrutura')
+    TOOL = 'TOOL', _('Ferramenta')
+
+
+class TrackCategory(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=60, unique=True)
+    slug = models.SlugField(max_length=60, unique=True)
+    is_active = models.BooleanField(default=True)
+    display_order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['display_order', 'name']
+        verbose_name_plural = 'track categories'
+
+    def __str__(self):
+        return self.name
+
+
 class Skill(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=80, unique=True)
     slug = models.SlugField(max_length=90, unique=True)
+    category = models.CharField(
+        max_length=20,
+        choices=SkillCategory.choices,
+        default=SkillCategory.TOOL,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -39,6 +69,11 @@ class Track(models.Model):
     description = models.TextField()
     level = models.CharField(max_length=20, choices=TrackLevel.choices, default=TrackLevel.BEGINNER)
     duration_weeks = models.PositiveIntegerField(default=1)
+    category = models.ForeignKey(
+        TrackCategory,
+        on_delete=models.PROTECT,
+        related_name='tracks',
+    )
     skills = models.ManyToManyField(Skill, blank=True, related_name='tracks')
     outcomes = models.JSONField(default=list, blank=True)
     prerequisites = models.JSONField(default=list, blank=True)

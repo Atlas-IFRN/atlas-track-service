@@ -1,21 +1,31 @@
 from django.contrib import admin
 from .models import (
-    Skill, Track, Module, Content, UserTrack,
+    Skill, Track, TrackCategory, Module, Content, UserTrack,
     UserModuleProgress, UserContentProgress, ChallengeSubmission, AuditLog
 )
 
 
+@admin.register(TrackCategory)
+class TrackCategoryAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'is_active', 'display_order', 'created_at')
+    list_editable = ('is_active', 'display_order')
+    list_filter = ('is_active',)
+    search_fields = ('name', 'slug')
+    prepopulated_fields = {'slug': ('name',)}
+
+
 @admin.register(Skill)
 class SkillAdmin(admin.ModelAdmin):
-    list_display = ('name', 'slug', 'created_at')
+    list_display = ('name', 'slug', 'category', 'created_at')
+    list_filter = ('category',)
     search_fields = ('name', 'slug')
     prepopulated_fields = {'slug': ('name',)}
 
 
 @admin.register(Track)
 class TrackAdmin(admin.ModelAdmin):
-    list_display = ('title', 'level', 'duration_weeks', 'status', 'created_at')
-    list_filter = ('status', 'level', 'skills')
+    list_display = ('title', 'category', 'level', 'duration_weeks', 'status', 'created_at')
+    list_filter = ('status', 'category', 'level', 'skills')
     filter_horizontal = ('skills',)
     search_fields = ('title', 'description')
 

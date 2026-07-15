@@ -1,12 +1,20 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
+
 from .views import (
-    SkillViewSet, TrackViewSet, ModuleViewSet, ContentViewSet, 
-    UserTrackViewSet, UserModuleProgressViewSet, 
-    UserContentProgressViewSet, ChallengeSubmissionViewSet
+    ChallengeSubmissionViewSet,
+    ContentViewSet,
+    ModuleViewSet,
+    SkillViewSet,
+    TrackCategoryViewSet,
+    TrackViewSet,
+    UserContentProgressViewSet,
+    UserModuleProgressViewSet,
+    UserTrackViewSet,
 )
 
 router = DefaultRouter()
+router.register(r'categories', TrackCategoryViewSet, basename='track-category')
 router.register(r'skills', SkillViewSet, basename='skill')
 router.register(r'tracks', TrackViewSet, basename='track')
 router.register(r'modules', ModuleViewSet, basename='module')
