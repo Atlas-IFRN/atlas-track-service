@@ -4,6 +4,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import (
+    AuditLog,
     ChallengeSubmission,
     Content,
     Module,
@@ -15,6 +16,21 @@ from .models import (
     UserTrack,
 )
 from .services import get_track_user_progress
+
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AuditLog
+        fields = [
+            'id',
+            'table_name',
+            'action',
+            'record_id',
+            'user_id',
+            'payload',
+            'created_at',
+        ]
+        read_only_fields = fields
 
 
 class TrackCategorySerializer(serializers.ModelSerializer):
