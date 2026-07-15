@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    AuditLogViewSet,
     ChallengeSubmissionViewSet,
     ContentViewSet,
     ModuleViewSet,
@@ -14,6 +15,7 @@ from .views import (
 )
 
 router = DefaultRouter()
+router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'categories', TrackCategoryViewSet, basename='track-category')
 router.register(r'skills', SkillViewSet, basename='skill')
 router.register(r'tracks', TrackViewSet, basename='track')

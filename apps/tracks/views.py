@@ -11,6 +11,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import (
+    AuditLog,
     ChallengeSubmission,
     Content,
     Module,
@@ -23,6 +24,7 @@ from .models import (
 )
 from .permissions import IsTeacherOrReadOnly
 from .serializers import (
+    AuditLogSerializer,
     ChallengeSubmissionSerializer,
     CompletedTrackSerializer,
     ContentSerializer,
@@ -52,6 +54,30 @@ class TrackPageNumberPagination(pagination.PageNumberPagination):
     page_size = 12
     page_size_query_param = 'page_size'
     max_page_size = 50
+
+
+class AuditLogPagination(pagination.PageNumberPagination):
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    """Histórico global de operações registradas neste microsserviço."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AuditLogSerializer
+    pagination_class = AuditLogPagination
+
+    def get_queryset(self):
+        queryset = AuditLog.objects.all()
+        action_name = self.request.query_params.get('action')
+        table_name = self.request.query_params.get('table_name')
+        if action_name:
+            queryset = queryset.filter(action=action_name.upper())
+        if table_name:
+            queryset = queryset.filter(table_name=table_name)
+        return queryset
 
 
 class TrackExceptionHandlerMixin:
