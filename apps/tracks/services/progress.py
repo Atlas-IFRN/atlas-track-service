@@ -14,6 +14,7 @@ from apps.tracks.models import (
 
 NOT_ENROLLED_PROGRESS = {
     'enrolled': False,
+    'enrollment_id': None,
     'status': None,
     'completed_modules': 0,
     'completed_content_ids': [],
@@ -84,6 +85,7 @@ def get_track_user_progress(track, user_id, role=None):
 
     return {
         'enrolled': True,
+        'enrollment_id': str(user_track.id),
         'status': user_track.status,
         'completed_modules': summary['completed_modules'],
         'completed_content_ids': summary['completed_content_ids'],
