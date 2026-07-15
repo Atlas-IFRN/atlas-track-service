@@ -38,7 +38,11 @@ from .serializers import (
     UserTrackSerializer,
 )
 from .tasks import evaluate_challenge_submission
-from .services import complete_content, uncomplete_content
+from .services import (
+    complete_content,
+    get_user_track_progress_summary,
+    uncomplete_content,
+)
 
 
 NOT_FOUND_DETAIL = 'Não encontrado.'
@@ -245,16 +249,14 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         track = self.get_object()
         _ensure_track_owner(track, request)
 
-        total_modules = track.modules.count()
         results = []
-        for ut in track.enrollments.all().prefetch_related('module_progress'):
-            completed = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed / total_modules * 100) if total_modules else 0
+        for ut in track.enrollments.select_related('track').all():
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'user_track_id': str(ut.id),
                 'user_id': str(ut.user_id),
                 'status': ut.status,
-                'progress_pct': round(progress_pct, 2),
+                'progress_pct': summary['percentage'],
                 'enrolled_at': ut.enrolled_at,
                 'completed_at': ut.completed_at,
             })
@@ -488,19 +490,21 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     def me(self, request):
         """Trilhas do aluno atual com progresso agregado."""
         user_id = request.user.id
-        queryset = UserTrack.objects.filter(user_id=user_id).select_related('track')
+        queryset = (
+            UserTrack.objects.filter(user_id=user_id)
+            .select_related('track')
+            .prefetch_related('track__modules__contents')
+        )
 
         results = []
         for ut in queryset:
-            total_modules = ut.track.modules.count()
-            completed = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed / total_modules * 100) if total_modules else 0
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'id': str(ut.id),
                 'track_id': str(ut.track.id),
                 'track_title': ut.track.title,
                 'status': ut.status,
-                'progress_pct': round(progress_pct, 2),
+                'progress_pct': summary['percentage'],
                 'enrolled_at': ut.enrolled_at,
                 'completed_at': ut.completed_at,
             })
@@ -533,20 +537,19 @@ class UserTrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
                 track__status='PUBLISHED',
             )
             .select_related('track')
+            .prefetch_related('track__modules__contents')
         )
 
         results = []
         for ut in queryset:
-            total_modules = ut.track.modules.count()
-            completed_modules = ut.module_progress.filter(status='COMPLETED').count()
-            progress_pct = (completed_modules / total_modules * 100) if total_modules else 0
+            summary = get_user_track_progress_summary(ut)
             results.append({
                 'track_id': str(ut.track.id),
                 'track_title': ut.track.title,
                 'status': ut.status,
-                'completed_modules': completed_modules,
-                'total_modules': total_modules,
-                'progress_pct': round(progress_pct, 2),
+                'completed_modules': summary['completed_modules'],
+                'total_modules': summary['total_modules'],
+                'progress_pct': summary['percentage'],
             })
 
         results.sort(key=lambda item: item['progress_pct'], reverse=True)

@@ -7,7 +7,16 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Module, Skill, Track, TrackCategory, UserTrack
+from .models import (
+    Content,
+    Module,
+    Skill,
+    Track,
+    TrackCategory,
+    UserContentProgress,
+    UserModuleProgress,
+    UserTrack,
+)
 from .serializers import UserTrackSerializer
 from .services.progress import get_track_user_progress
 
@@ -77,6 +86,68 @@ class UserTrackEnrollmentLimitTests(TestCase):
 
         self.assertTrue(progress['enrolled'])
         self.assertEqual(progress['status'], 'COMPLETED')
+
+    def test_progress_uses_current_contents_instead_of_stale_module_status(self):
+        track = self.create_published_track('Trilha com conteúdo novo')
+        first_module = Module.objects.create(
+            track=track,
+            title='Módulo 1',
+            description='Primeiro módulo',
+            display_order=1,
+        )
+        second_module = Module.objects.create(
+            track=track,
+            title='Módulo 2',
+            description='Segundo módulo',
+            display_order=2,
+        )
+        first_contents = [
+            Content.objects.create(
+                module=first_module,
+                title=f'Conteúdo {index}',
+                description='Conteúdo concluído',
+                content_type='ARTICLE',
+                display_order=index,
+            )
+            for index in range(1, 4)
+        ]
+        second_contents = [
+            Content.objects.create(
+                module=second_module,
+                title=f'Conteúdo {index}',
+                description='Conteúdo concluído',
+                content_type='ARTICLE',
+                display_order=index,
+            )
+            for index in range(4, 7)
+        ]
+        user_track = UserTrack.objects.create(user_id=self.user_id, track=track)
+        for content in [*first_contents, *second_contents]:
+            UserContentProgress.objects.create(
+                user_track=user_track,
+                content=content,
+                status='COMPLETED',
+            )
+        for module in (first_module, second_module):
+            UserModuleProgress.objects.create(
+                user_track=user_track,
+                module=module,
+                status='COMPLETED',
+                progress_pct=100,
+            )
+
+        Content.objects.create(
+            module=second_module,
+            title='Conteúdo adicionado depois',
+            description='Ainda não concluído',
+            content_type='ARTICLE',
+            display_order=7,
+        )
+
+        progress = get_track_user_progress(track, self.user_id, role='STUDENT')
+
+        self.assertEqual(progress['completed_modules'], 1)
+        self.assertEqual(progress['percentage'], 85.71)
 
 
 class CompletedTracksApiTests(APITestCase):
