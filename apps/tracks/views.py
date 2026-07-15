@@ -10,7 +10,17 @@ from rest_framework.exceptions import NotFound, PermissionDenied, ValidationErro
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import ChallengeSubmission, Content, Module, Skill, Track, UserContentProgress, UserModuleProgress, UserTrack
+from .models import (
+    ChallengeSubmission,
+    Content,
+    Module,
+    Skill,
+    Track,
+    TrackCategory,
+    UserContentProgress,
+    UserModuleProgress,
+    UserTrack,
+)
 from .permissions import IsTeacherOrReadOnly
 from .serializers import (
     ChallengeSubmissionSerializer,
@@ -19,6 +29,7 @@ from .serializers import (
     ModuleListSerializer,
     ModuleSerializer,
     SkillSerializer,
+    TrackCategorySerializer,
     TrackListSerializer,
     TrackSearchSerializer,
     TrackSerializer,
@@ -69,13 +80,26 @@ def _parse_user_uuid(value):
         }) from None
 
 
+class TrackCategoryViewSet(
+    TrackExceptionHandlerMixin,
+    viewsets.ReadOnlyModelViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    serializer_class = TrackCategorySerializer
+    queryset = TrackCategory.objects.filter(is_active=True)
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name', 'slug']
+    ordering_fields = ['display_order', 'name']
+    ordering = ['display_order', 'name']
+
+
 class SkillViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     queryset = Skill.objects.all()
     serializer_class = SkillSerializer
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['name', 'slug']
-    ordering_fields = ['name', 'created_at']
+    search_fields = ['name', 'slug', 'category']
+    ordering_fields = ['name', 'category', 'created_at']
     ordering = ['name']
 
 
@@ -83,13 +107,21 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsTeacherOrReadOnly]
     pagination_class = TrackPageNumberPagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['title', 'description', 'skills__name', 'skills__slug']
-    ordering_fields = ['title', 'created_at', 'duration_weeks', 'level']
+    search_fields = [
+        'title',
+        'description',
+        'category__name',
+        'category__slug',
+        'skills__name',
+        'skills__slug',
+    ]
+    ordering_fields = ['title', 'category__name', 'created_at', 'duration_weeks', 'level']
     ordering = ['-created_at']
 
     def get_queryset(self):
         queryset = (
-            Track.objects.prefetch_related('skills', 'modules__contents')
+            Track.objects.select_related('category')
+            .prefetch_related('skills', 'modules__contents')
             .annotate(
                 modules_count=Count('modules', distinct=True),
                 total_duration_minutes=Sum('modules__contents__duration_minutes'),
@@ -114,6 +146,10 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         if level:
             queryset = queryset.filter(level=level)
 
+        category = self.request.query_params.get('category')
+        if category:
+            queryset = queryset.filter(category__slug=category)
+
         skills = self.request.query_params.get('skills') or self.request.query_params.get('skill')
         if skills:
             skill_values = [value.strip() for value in skills.split(',') if value.strip()]
@@ -137,7 +173,11 @@ class TrackViewSet(TrackExceptionHandlerMixin, viewsets.ModelViewSet):
         com um queryset leve (sem os contadores caros de get_queryset) e um
         serializer enxuto. Respeita a visibilidade: não-docente só vê PUBLISHED.
         """
-        queryset = Track.objects.prefetch_related('skills').order_by('-created_at')
+        queryset = (
+            Track.objects.select_related('category')
+            .prefetch_related('skills')
+            .order_by('-created_at')
+        )
         if request.user.role != 'TEACHER':
             queryset = queryset.filter(status='PUBLISHED')
         queryset = self.filter_queryset(queryset)

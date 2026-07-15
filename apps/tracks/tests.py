@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Module, Track, UserTrack
+from .models import Module, Skill, Track, TrackCategory, UserTrack
 from .serializers import UserTrackSerializer
 from .services.progress import get_track_user_progress
 
@@ -16,6 +16,7 @@ class UserTrackEnrollmentLimitTests(TestCase):
     def setUp(self):
         self.user_id = uuid.uuid4()
         self.creator_id = uuid.uuid4()
+        self.category = TrackCategory.objects.get(slug='backend')
         self.request = SimpleNamespace(
             user=SimpleNamespace(
                 id=self.user_id,
@@ -27,6 +28,7 @@ class UserTrackEnrollmentLimitTests(TestCase):
     def create_published_track(self, title):
         track = Track.objects.create(
             creator_id=self.creator_id,
+            category=self.category,
             title=title,
             description='Descrição da trilha',
         )
@@ -83,6 +85,7 @@ class CompletedTracksApiTests(APITestCase):
         cls.student_id = uuid4()
         cls.other_student_id = uuid4()
         cls.teacher_id = uuid4()
+        cls.category = TrackCategory.objects.get(slug='backend')
 
         cls.completed_track = cls.create_published_track(
             title='Fundamentos de Python',
@@ -108,6 +111,7 @@ class CompletedTracksApiTests(APITestCase):
     def create_published_track(cls, title):
         track = Track.objects.create(
             creator_id=cls.teacher_id,
+            category=cls.category,
             title=title,
             description=f'Descrição de {title}',
         )
@@ -171,3 +175,84 @@ class CompletedTracksApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class TrackCategoryApiTests(APITestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.teacher_id = uuid4()
+        cls.backend = TrackCategory.objects.get(slug='backend')
+        TrackCategory.objects.create(
+            name='Categoria inativa',
+            slug='inactive',
+            is_active=False,
+            display_order=20,
+        )
+        cls.python = Skill.objects.create(
+            name='Python',
+            slug='python',
+            category='LANGUAGE',
+        )
+
+    def authenticate(self):
+        self.client.force_authenticate(
+            user=SimpleNamespace(
+                id=self.teacher_id,
+                role='TEACHER',
+                is_authenticated=True,
+            )
+        )
+
+    def test_lists_only_active_track_categories(self):
+        self.authenticate()
+
+        response = self.client.get('/api/track/categories/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_slugs = {category['slug'] for category in response.data}
+        self.assertIn('backend', returned_slugs)
+        self.assertNotIn('inactive', returned_slugs)
+
+    def test_skill_exposes_category_and_display_label(self):
+        self.authenticate()
+
+        response = self.client.get(f'/api/track/skills/{self.python.id}/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['category'], 'LANGUAGE')
+        self.assertEqual(response.data['category_display'], 'Linguagem')
+
+    def test_track_creation_requires_category(self):
+        self.authenticate()
+
+        response = self.client.post(
+            '/api/track/tracks/',
+            {
+                'title': 'Trilha sem categoria',
+                'description': 'Descrição',
+                'duration_weeks': 1,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('category_id', response.data)
+
+    def test_track_creation_returns_selected_category(self):
+        self.authenticate()
+
+        response = self.client.post(
+            '/api/track/tracks/',
+            {
+                'title': 'Trilha categorizada',
+                'description': 'Descrição',
+                'duration_weeks': 1,
+                'category_id': str(self.backend.id),
+                'skill_ids': [str(self.python.id)],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['category']['slug'], 'backend')
+        self.assertEqual(response.data['skills'][0]['category'], 'LANGUAGE')

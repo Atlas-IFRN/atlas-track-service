@@ -58,6 +58,19 @@ Documentação interativa disponível em:
 | `PUT/PATCH` | `/api/track/tracks/{id}/` | Atualiza trilha (TEACHER) |
 | `DELETE` | `/api/track/tracks/{id}/` | Remove trilha (TEACHER) |
 
+O campo `category_id` é obrigatório na criação. As respostas incluem a
+categoria completa e cada skill inclui sua categoria semântica.
+
+### Categorias de trilha (`/api/track/categories/`)
+
+| Método | Endpoint | Descrição |
+|--------|----------|-----------|
+| `GET` | `/api/track/categories/` | Lista categorias ativas na ordem de exibição |
+| `GET` | `/api/track/categories/{id}/` | Retorna uma categoria ativa |
+
+As categorias são administradas pelo Django Admin. O `slug` funciona como a
+chave estável usada pelo design system para selecionar tema, gradiente e ícone.
+
 ### Módulos (`/api/track/modules/`)
 
 | Método | Endpoint | Descrição |
