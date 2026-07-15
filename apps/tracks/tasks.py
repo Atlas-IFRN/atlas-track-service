@@ -13,6 +13,13 @@ from .services import complete_content
 logger = logging.getLogger(__name__)
 
 
+def _update_submission(submission, **values):
+    """Atualiza via save para que os signals de auditoria sejam disparados."""
+    for field, value in values.items():
+        setattr(submission, field, value)
+    submission.save(update_fields=list(values))
+
+
 def _extract_ai_detail(response: requests.Response) -> str:
     """Tira a string `detail` do JSON do ai-service (FastAPI HTTPException).
 
@@ -53,7 +60,7 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         logger.error("ChallengeSubmission %s não encontrada — abortando task.", submission_id)
         return {"status": "not_found", "submission_id": submission_id}
 
-    ChallengeSubmission.objects.filter(pk=submission.pk).update(ai_status='EVALUATING')
+    _update_submission(submission, ai_status='EVALUATING')
 
     challenge = submission.challenge
     payload = {
@@ -73,7 +80,8 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         response = requests.post(url, json=payload, timeout=settings.AI_SERVICE_TIMEOUT)
     except (requests.ConnectionError, requests.Timeout) as exc:
         logger.exception("Falha de rede ao chamar ai-service para submission %s", submission.pk)
-        ChallengeSubmission.objects.filter(pk=submission.pk).update(
+        _update_submission(
+            submission,
             ai_status='FAILED',
             ai_feedback=f"Falha de rede ao contatar serviço de IA: {exc}",
             evaluated_at=timezone.now(),
@@ -86,7 +94,8 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
             "ai-service rejeitou submission %s com %s: %s",
             submission.pk, response.status_code, detail,
         )
-        ChallengeSubmission.objects.filter(pk=submission.pk).update(
+        _update_submission(
+            submission,
             ai_status='FAILED',
             ai_feedback=detail,
             evaluated_at=timezone.now(),
@@ -111,7 +120,8 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         data = response.json()
     except ValueError as exc:
         logger.exception("Resposta do ai-service não é JSON válido para submission %s", submission.pk)
-        ChallengeSubmission.objects.filter(pk=submission.pk).update(
+        _update_submission(
+            submission,
             ai_status='FAILED',
             ai_feedback=f"Resposta inválida do serviço de IA: {exc}",
             evaluated_at=timezone.now(),
@@ -119,7 +129,8 @@ def evaluate_challenge_submission(self, submission_id: str) -> dict:
         return {"status": "invalid_response", "submission_id": submission_id}
 
     score = data.get('score')
-    ChallengeSubmission.objects.filter(pk=submission.pk).update(
+    _update_submission(
+        submission,
         ai_status='EVALUATED',
         ai_score=score,
         ai_feedback=data.get('feedback') or '',

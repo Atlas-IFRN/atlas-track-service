@@ -310,6 +310,8 @@ class AuditAction(models.TextChoices):
 
 
 class AuditLogTable(models.TextChoices):
+    TRACK_CATEGORY = 'track_category', _('Track Category')
+    SKILL = 'skill', _('Skill')
     TRACK = 'track', _('Track')
     MODULE = 'module', _('Module')
     CONTENT = 'content', _('Content')
@@ -332,6 +334,10 @@ class AuditLog(models.Model):
         verbose_name = "Audit Log"
         verbose_name_plural = "Audit Logs"
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user_id', '-created_at'], name='track_audit_user_time_idx'),
+            models.Index(fields=['-created_at'], name='track_audit_created_idx'),
+        ]
 
     def __str__(self):
         return f"[{self.action}] {self.table_name} ({self.record_id})"
